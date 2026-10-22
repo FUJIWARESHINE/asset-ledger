@@ -17,3 +17,10 @@ __pycache__/
 .ext-test/
 .ext-key.pem
 .ext-pub.txt
+
+# 扩展签名私钥（决定扩展 ID，绝不能进仓库；CI 用 secret EXTENSION_KEY_PEM）
+extension-key.pem
+*.pem.bak
+
+# 打包产物
+dist/

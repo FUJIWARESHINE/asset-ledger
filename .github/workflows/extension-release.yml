@@ -1,0 +1,131 @@
+name: extension-release
+
+# 本工作流只负责「浏览器扩展」，与 Docker 镜像完全独立：
+#   - 触发条件只有 ext-v* tag 和手动 dispatch，push 到 main 不会发布
+#   - 镜像发版走 docker-publish.yml（tag 前缀 v*），两边 tag 前缀不重叠
+#   - 这里产出的 Release 里带 update.xml，扩展的自动更新依赖
+#     releases/latest/download/update.xml，所以镜像那边不创建 Release
+on:
+  push:
+    tags: ["ext-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "要发布的版本号（如 1.0.1）；留空则用 manifest 里的 version"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard · 只接受扩展 tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ "$tag" != ext-v* ]]; then
+            echo "::error::tag '$tag' 不是扩展 tag（应形如 ext-v1.2.3）。镜像发版请用 v 前缀。"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 解析并校验版本
+        id: ver
+        run: |
+          # manifest 里的 version 是唯一事实来源，tag 必须与它一致，
+          # 否则已装用户拿到的 update.xml 版本号对不上，更新会静默失效
+          ver=$(python -c "import json;print(json.load(open('extension/manifest.json'))['version'])")
+          input_ver="${{ inputs.version }}"
+          if [[ -n "$input_ver" && "$input_ver" != "$ver" ]]; then
+            echo "::error::输入版本 $input_ver 与 manifest 版本 $ver 不一致，请先改 extension/manifest.json"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag_ver="${GITHUB_REF_NAME#ext-v}"
+            if [[ "$tag_ver" != "$ver" ]]; then
+              echo "::error::tag 版本 $tag_ver 与 manifest 版本 $ver 不一致，请先改 extension/manifest.json"
+              exit 1
+            fi
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=ext-v$ver" >> "$GITHUB_OUTPUT"
+          echo "版本：$ver"
+
+      - name: 打包 crx / zip / update.xml
+        env:
+          EXTENSION_KEY_PEM: ${{ secrets.EXTENSION_KEY_PEM }}
+        run: |
+          if [[ -z "$EXTENSION_KEY_PEM" ]]; then
+            echo "::error::缺少仓库 secret EXTENSION_KEY_PEM（扩展签名私钥），换密钥会导致扩展 ID 变化"
+            exit 1
+          fi
+          printf '%s\n' "$EXTENSION_KEY_PEM" > extension-key.pem
+          python tools/build_extension.py \
+            --key extension-key.pem \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.tag }}"
+
+      - name: 校验 crx 结构与签名
+        run: python tools/verify_crx.py --expect-id dist/extension-id.txt
+
+      - name: 校验 update.xml 与实际文件名一致
+        run: |
+          crx_name=$(ls dist/*.crx | xargs -n1 basename)
+          grep -q "/$crx_name'" dist/update.xml || { echo "::error::update.xml 的 codebase 与 $crx_name 不匹配"; exit 1; }
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          ns = {"u": "http://www.google.com/update2/response"}
+          root = ET.parse("dist/update.xml").getroot()
+          app = root.find("u:app", ns)
+          upd = app.find("u:updatecheck", ns)
+          print(f"appid={app.get('appid')} version={upd.get('version')}")
+          print(f"codebase={upd.get('codebase')}")
+          PY
+
+      - name: 生成安装说明与脚本
+        run: |
+          python - <<'PY'
+          import pathlib, json
+          ver = json.load(open("extension/manifest.json"))["version"]
+          ext_id = pathlib.Path("dist/extension-id.txt").read_text().strip()
+          subs = {"{{VERSION}}": ver, "{{EXT_ID}}": ext_id, "__EXT_ID__": ext_id}
+          jobs = [
+              ("extension/INSTALL.md", "dist/INSTALL.md"),
+              ("tools/install.ps1", "dist/install.ps1"),
+              ("tools/uninstall.ps1", "dist/uninstall.ps1"),
+          ]
+          for src, dst in jobs:
+              text = pathlib.Path(src).read_text(encoding="utf-8")
+              for k, v in subs.items():
+                  text = text.replace(k, v)
+              assert "{{" not in text and "__EXT_ID__" not in text, f"{dst} 还有未替换的占位符"
+              pathlib.Path(dst).write_text(text, encoding="utf-8")
+          print("已生成 INSTALL.md / install.ps1 / uninstall.ps1")
+          PY
+
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.ver.outputs.tag }}"
+          gh release create "$tag" \
+            --title "扩展 v${{ steps.ver.outputs.version }}" \
+            --notes "浏览器扩展（Edge / Chrome 通用，MV3）。安装方式见 INSTALL.md。" \
+            dist/*.crx dist/*.zip dist/update.xml dist/INSTALL.md dist/install.ps1 dist/uninstall.ps1
+
+      - name: Summary
+        run: |
+          {
+            echo "### 扩展 v${{ steps.ver.outputs.version }} 已发布"
+            echo ""
+            echo '```'
+            cat dist/extension-id.txt
+            ls -1 dist
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

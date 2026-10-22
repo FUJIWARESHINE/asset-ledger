@@ -1,8 +1,13 @@
 name: docker-publish
 
+# 本工作流只负责「Docker 镜像」，与浏览器扩展完全独立：
+#   - 触发条件只有镜像 tag（vX.Y.Z）和手动 dispatch
+#   - 扩展发版走 extension-release.yml（tag 前缀 ext-v*）
+#   - push 到 main / 改 extension/ 都不会触发这里
+#   - 这里也不会创建 GitHub Release（扩展的 update.xml 依赖 releases/latest）
 on:
   push:
-    tags: ["v*"]
+    tags: ["v[0-9]*"]
   workflow_dispatch:
     inputs:
       tag:
@@ -20,6 +25,16 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Guard · 只接受镜像版本 tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::tag '$tag' 不是镜像版本（应形如 v1.2.3）。扩展发版请用 ext-v 前缀。"
+            exit 1
+          fi
+          echo "镜像版本：$tag"
+
       - uses: actions/checkout@v4
 
       - uses: docker/setup-qemu-action@v3
