@@ -1,7 +1,9 @@
 services:
   asset-ledger:
-    build: .
-    image: asset-ledger:latest
+    # 直接拉现成镜像，不在本地构建
+    image: ghcr.io/fujiwareshine/asset-ledger:latest
+    # 国内拉 GHCR 慢的话，把上面一行换成 Docker Hub：
+    # image: xuthsand/asset-ledger:latest
     container_name: asset-ledger
     restart: unless-stopped
     ports:
