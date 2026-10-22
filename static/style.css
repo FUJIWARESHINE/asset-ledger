@@ -864,6 +864,10 @@ html[data-theme="dark"] .confirm-backdrop { background: rgba(0, 0, 0, 0.55); }
 .sheet-layer.open .sheet-backdrop { opacity: 1; }
 .sheet-layer.open .sheet { transform: none; opacity: 1; }
 
+/* 单字段的小弹层（平台改名）：不跟着 92vh 撑满，内容多高就多高 */
+.sheet.sheet-xs { height: auto; }
+.sheet.sheet-xs .sheet-body { flex: 0 0 auto; }
+
 .sheet-grabber {
   display: none;
   width: 38px; height: 4.5px;
@@ -1444,6 +1448,8 @@ html[data-theme="dark"] .field input[type="date"]::-webkit-calendar-picker-indic
 }
 .mini-icon svg { width: 14px; height: 14px; }
 .acc:hover .mini-icon, .acc-head:focus-within .mini-icon { opacity: 1; }
+/* 平台标题栏里的改名按钮：跟着平台卡片悬停显形 */
+.plat:hover .mini-icon, .plat-head:focus-within .mini-icon { opacity: 1; }
 .mini-icon:hover { background: var(--hover-tint); color: var(--text); }
 .mini-icon:active { transform: scale(0.9); }
 .mini-icon.acc-fold { opacity: 1; transition: transform 0.4s var(--ease-spring); }

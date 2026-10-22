@@ -5,6 +5,62 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+/* 折叠状态落 localStorage：刷新后平台 / 账号的折叠位置保持不变。
+   值形如 { platforms: ["Cloudflare"], accounts: ["Cloudflare|3"] }。 */
+const FOLD_KEY = "al-folded";
+function loadFolded() {
+  const empty = { plats: new Set(), accs: new Set() };
+  try {
+    const o = JSON.parse(localStorage.getItem(FOLD_KEY) || "null");
+    if (!o || typeof o !== "object") return empty;
+    return {
+      plats: new Set(Array.isArray(o.platforms) ? o.platforms : []),
+      accs: new Set(Array.isArray(o.accounts) ? o.accounts : []),
+    };
+  } catch (_) {
+    return empty;
+  }
+}
+function saveFolded() {
+  try {
+    localStorage.setItem(FOLD_KEY, JSON.stringify({
+      platforms: [...state.collapsedPlatforms],
+      accounts: [...state.collapsedAccounts],
+    }));
+  } catch (_) {}
+}
+
+/* 滚动位置：记在 sessionStorage（每个标签页独立，刷新会保留、换标签不串）。
+   数据是异步渲染出来的，所以恢复必须放在 refresh() 之后，否则页面还没高度，scrollTo 会被夹回 0。 */
+const SCROLL_KEY = "al-scroll";
+let scrollTick = 0;
+let scrollReady = false; // 首次恢复完成前不要写入，否则会被浏览器自带的 0 位置覆盖掉存档
+function rememberScroll() {
+  if (!scrollReady || scrollTick) return;
+  scrollTick = requestAnimationFrame(() => {
+    scrollTick = 0;
+    try { sessionStorage.setItem(SCROLL_KEY, String(Math.round(window.scrollY))); } catch (_) {}
+  });
+}
+function restoreScroll() {
+  let y = 0;
+  try { y = Number(sessionStorage.getItem(SCROLL_KEY)) || 0; } catch (_) {}
+  if (!(y > 0)) return;
+  const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  window.scrollTo(0, Math.min(y, max));
+}
+function restoreScrollSoon() {
+  restoreScroll();
+  requestAnimationFrame(() => {
+    restoreScroll();
+    // 字体/图片晚一步撑高时再校一次
+    setTimeout(restoreScroll, 160);
+  });
+  scrollReady = true;
+}
+
+const folded0 = loadFolded();
+
 const state = {
   tree: [],
   assets: [],
@@ -12,14 +68,21 @@ const state = {
   cat: "all",
   platform: "all",
   provider: "all",
+  // 域名托管状态：all / hosted（申请商有 + Cloudflare 也有）/ unhosted（只在申请商那边）
+  host: "all",
+  hostIndex: new Set(),
   view: localStorage.getItem("al-view") || "group",
   sort: localStorage.getItem("al-sort") || "smart",
   password: sessionStorage.getItem("al-pwd") || "",
   editingId: null,
   editingAccountId: null,
+  // 正在重命名的平台名（弹层打开时非 null）
+  renamingPlatform: null,
+  // 复制模式下的模板资产（浅拷贝）。非 null 表示当前弹层是"复制"，保存会新建而不是覆盖。
+  copySource: null,
   deleteTarget: null,
-  collapsedPlatforms: new Set(),
-  collapsedAccounts: new Set(),
+  collapsedPlatforms: folded0.plats,
+  collapsedAccounts: folded0.accs,
   onlyUrgent: false,
   quickForAsset: false,
   // 账号内类别筛选：accountKey -> categoryId。
@@ -30,6 +93,20 @@ const state = {
 const icon = (name) => `<svg><use href="#i-${name}"/></svg>`;
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+
+/* 大小写不敏感的全量替换（不走正则，省得域名里的点在正则里变成通配符） */
+function replaceCI(hay, needle, repl) {
+  const h = String(hay).toLowerCase();
+  const n = String(needle).toLowerCase();
+  if (!n) return hay;
+  let out = "", i = 0;
+  while (true) {
+    const k = h.indexOf(n, i);
+    if (k < 0) return out + hay.slice(i);
+    out += hay.slice(i, k) + repl;
+    i = k + n.length;
+  }
+}
 
 const moneyFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 });
 const money = (n) => "¥" + moneyFmt.format(Math.round(n || 0));
@@ -219,12 +296,43 @@ function applyTree(data) {
   state.tree = data.platforms || [];
   state.assets = [];
   for (const p of state.tree) for (const acc of p.accounts) state.assets.push(...acc.assets);
+  state.hostIndex = buildHostIndex();
 }
 
 function allAccounts() {
   const out = [];
   for (const p of state.tree) for (const acc of p.accounts) if (acc.id !== null) out.push(acc);
   return out;
+}
+
+/* ---------------------------------------------------------------- 域名托管判定
+   用户口径：申请商（免费域名提供方）有的域名，Cloudflare 下也有 → 已托管；
+   只在申请商那边、Cloudflare 下没有 → 未托管。
+   - 挂在 Cloudflare 账号下的域名，本身就在 CF 里，直接算已托管；
+   - 挂在申请商账号下的域名，要按名字去 CF 的域名集合里比对。
+   名字归一：小写 + 去掉协议与路径，避免 https://X.com/ 这种写法漏匹配。 */
+function hostKeyOf(asset) {
+  return String(asset.name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//, "")
+    .replace(/[/?#].*$/, "");
+}
+const isCloudflareAsset = (a) => /cloudflare/i.test(a.platform || "");
+const isDomainAsset = (a) => a.category === "domain" || a.category === "subdomain";
+
+function buildHostIndex() {
+  const set = new Set();
+  for (const a of state.assets) {
+    if (isDomainAsset(a) && isCloudflareAsset(a)) set.add(hostKeyOf(a));
+  }
+  return set;
+}
+
+function domainHostState(a) {
+  if (!isDomainAsset(a)) return null;
+  if (isCloudflareAsset(a)) return "hosted";
+  return state.hostIndex.has(hostKeyOf(a)) ? "hosted" : "unhosted";
 }
 
 /* ---------------------------------------------------------- 过滤 */
@@ -241,10 +349,12 @@ function filteredTree() {
       let assets = acc.assets;
       if (state.cat !== "all") assets = assets.filter((a) => a.category === state.cat);
       if (state.provider !== "all") assets = assets.filter((a) => (a.provider || "") === state.provider);
+      if (state.host !== "all") assets = assets.filter((a) => domainHostState(a) === state.host);
       if (state.onlyUrgent) assets = assets.filter((a) => ["expired", "urgent", "soon"].includes(a.expiry_state));
       if (q && !accHit) assets = assets.filter((a) => assetText(a).includes(q));
 
-      const filtering = !!q || state.cat !== "all" || state.onlyUrgent || state.provider !== "all";
+      const filtering = !!q || state.cat !== "all" || state.onlyUrgent ||
+        state.provider !== "all" || state.host !== "all";
       if (!assets.length && filtering) continue;
       accounts.push({ ...acc, assets: sortAssets(assets), shown: assets.length });
     }
@@ -333,6 +443,26 @@ function renderChips() {
   }
   $("#platformChips").innerHTML = sub.join("");
 
+  // 域名托管状态：申请商有 + Cloudflare 也有 = 已托管；只在申请商那边 = 未托管
+  const hostWrap = $("#hostChips");
+  if (hostWrap) {
+    let hosted = 0, unhosted = 0;
+    for (const a of state.assets) {
+      const hs = domainHostState(a);
+      if (hs === "hosted") hosted++;
+      else if (hs === "unhosted") unhosted++;
+    }
+    const total = hosted + unhosted;
+    hostWrap.hidden = !total;
+    if (total) {
+      hostWrap.innerHTML = [
+        `<button class="chip sm ${state.host === "all" ? "active" : ""}" data-host="all">${icon("globe")}全部域名<span class="chip-n">${total}</span></button>`,
+        `<button class="chip sm ${state.host === "hosted" ? "active" : ""}" data-host="hosted" style="--c:${catColor("domain")}">${icon("check")}已托管<span class="chip-n">${hosted}</span></button>`,
+        `<button class="chip sm ${state.host === "unhosted" ? "active" : ""}" data-host="unhosted" style="--c:#E08600">${icon("alert")}未托管<span class="chip-n">${unhosted}</span></button>`,
+      ].join("");
+    }
+  }
+
   // 申请商是域名的第二个归属维度：点 dpdns 能看到挂在各个 CF 账号下的全部 dpdns 域名
   const provCounts = {};
   for (const a of state.assets) {
@@ -401,11 +531,13 @@ function assetTile(a) {
   const bad = a.expiry_state === "expired";
   const soon = a.expiry_state === "urgent" || a.expiry_state === "soon";
   const go = safeUrl(a.url);
+  const hs = domainHostState(a);
   const tip = [
     a.name,
     a.expires_at ? "到期 " + a.expires_at : "",
     a.provider ? `申请 ${a.provider}${a.provider_account ? " / " + a.provider_account : ""}` : "",
     a.platform ? `托管 ${a.platform}${a.account ? " / " + a.account : ""}` : "",
+    hs === "unhosted" ? "未托管：Cloudflare 下没有这个域名" : hs === "hosted" ? "已托管" : "",
   ].filter(Boolean).join(" · ");
   return `<button class="ac ${bad ? "is-expired" : soon ? "is-soon" : ""}" data-asset="${a.id}"
       title="${esc(tip)}"
@@ -539,6 +671,7 @@ function platformBlock(p) {
         <p>${p.account_count} 个账号${p.accounts.some((a) => a.id === null) ? " · 含未归属" : ""} · ${esc(catSummary(r.byCat))}</p>
       </div>
       <div class="plat-stats">${stats.join("")}</div>
+      ${p.platform === "未归类" ? "" : `<button class="mini-icon" data-act="rename-platform" data-platform="${esc(p.platform)}" title="重命名平台（账号与资产一起改）">${icon("edit")}</button>`}
       <button class="plat-fold" tabindex="-1" aria-hidden="true">${icon("chev")}</button>
     </header>
     <div class="plat-body">${p.accounts.map((a) => accountBlock(a, p.platform)).join("")}</div>
@@ -590,6 +723,7 @@ function flatAssets() {
   if (state.cat !== "all") list = list.filter((a) => a.category === state.cat);
   if (state.platform !== "all") list = list.filter((a) => a.platform === state.platform);
   if (state.provider !== "all") list = list.filter((a) => (a.provider || "") === state.provider);
+  if (state.host !== "all") list = list.filter((a) => domainHostState(a) === state.host);
   if (state.onlyUrgent) list = list.filter((a) => ["expired", "urgent", "soon"].includes(a.expiry_state));
   if (q) {
     list = list.filter((a) => assetText(a).includes(q) ||
@@ -650,17 +784,15 @@ function renderBoard() {
   const group = filteredTree();
   const count = group.reduce((n, p) => n + p.roll.count, 0);
   $("#boardCount").textContent = state.view === "group" ? count : flatAssets().length;
-  $("#boardTitle").textContent = state.q
-    ? "搜索结果"
-    : state.onlyUrgent
-      ? "需要处理"
-      : state.platform !== "all"
-        ? state.platform
-        : state.provider !== "all"
-          ? `${state.provider} 申请的资产`
-          : state.view === "group"
-            ? "按平台分组"
-            : state.cat === "all" ? "全部资产" : catMeta(state.cat).label;
+  // 标题跟着当前最强的那条筛选走：搜索 > 紧急 > 托管状态 > 平台 > 申请商 > 视图
+  let title = state.view === "group" ? "按平台分组" : state.cat === "all" ? "全部资产" : catMeta(state.cat).label;
+  if (state.provider !== "all") title = `${state.provider} 申请的资产`;
+  if (state.platform !== "all") title = state.platform;
+  if (state.host === "hosted") title = "已托管域名";
+  if (state.host === "unhosted") title = "未托管域名";
+  if (state.onlyUrgent) title = "需要处理";
+  if (state.q) title = "搜索结果";
+  $("#boardTitle").textContent = title;
 
   // 分组视图下类别状态做成标题旁的可清除胶囊，避免筛选开着却看不出来
   const catPill = $("#catFilterPill");
@@ -818,40 +950,52 @@ function fillAccountSelect(selectedId) {
   $("#f-account").innerHTML = opts.join("");
 }
 
-function openSheet(asset = null, presetAccountId = null) {
-  state.editingId = asset ? asset.id : null;
-  $("#sheetTitle").textContent = asset ? "编辑资产" : "新增资产";
-  $("#sheetSub").textContent = asset
-    ? `最后更新 ${(asset.updated_at || "").replace("T", " ")}`
-    : "选好归属账号，平台会自动带出";
+/* openSheet(asset, presetAccountId, { copy: true })
+   复制模式：字段全部照抄来源资产，但不带 id —— 保存走 POST 生成新资产；
+   归属账号可以在下拉里换成任意平台的任意账号，所以跨账号复制不用额外流程。 */
+function openSheet(asset = null, presetAccountId = null, opts = {}) {
+  const copy = !!asset && !!opts.copy;
+  state.copySource = copy ? { ...asset } : null;
+  const src = state.copySource || asset;
+  state.editingId = asset && !copy ? asset.id : null;
 
-  $("#f-id").value = asset?.id ?? "";
-  $("#f-name").value = asset?.name ?? "";
-  $("#f-url").value = asset?.url ?? "";
-  $("#f-expires").value = asset?.expires_at ?? "";
-  $("#f-cycle").value = asset?.cycle ?? "none";
-  $("#f-cost").value = asset?.cost ? asset.cost : "";
-  $("#f-currency").value = asset?.currency ?? "CNY";
-  $("#f-env").value = asset?.environment ?? "prod";
-  $("#f-status").value = asset?.status ?? "active";
-  $("#f-renew").checked = !!asset?.auto_renew;
-  $("#f-pinned").checked = !!asset?.pinned;
-  $("#f-cred").value = asset?.credential_hint ?? "";
-  $("#f-tags").value = asset?.tags ?? "";
-  $("#f-notes").value = asset?.notes ?? "";
-  $("#f-provider").value = asset?.provider ?? "";
-  $("#f-provider-acc").value = asset?.provider_account ?? "";
+  $("#sheetTitle").textContent = copy ? "复制资产" : asset ? "编辑资产" : "新增资产";
+  $("#sheetSub").textContent = copy
+    ? `以「${asset.name}」为模板，改掉名称 / 链接，或换一个归属账号`
+    : asset
+      ? `最后更新 ${(asset.updated_at || "").replace("T", " ")}`
+      : "选好归属账号，平台会自动带出";
+
+  // 复制模式不带 id：保存走 POST 生成新记录，别把来源的 id 留在表单里
+  $("#f-id").value = copy ? "" : src?.id ?? "";
+  $("#f-name").value = src?.name ?? "";
+  $("#f-url").value = src?.url ?? "";
+  $("#f-expires").value = src?.expires_at ?? "";
+  $("#f-cycle").value = src?.cycle ?? "none";
+  $("#f-cost").value = src?.cost ? src.cost : "";
+  $("#f-currency").value = src?.currency ?? "CNY";
+  $("#f-env").value = src?.environment ?? "prod";
+  $("#f-status").value = src?.status ?? "active";
+  $("#f-renew").checked = !!src?.auto_renew;
+  $("#f-pinned").checked = !!src?.pinned;
+  $("#f-cred").value = src?.credential_hint ?? "";
+  $("#f-tags").value = src?.tags ?? "";
+  $("#f-notes").value = src?.notes ?? "";
+  $("#f-provider").value = src?.provider ?? "";
+  $("#f-provider-acc").value = src?.provider_account ?? "";
   fillProviderList();
 
-  fillAccountSelect(asset?.account_id ?? presetAccountId ?? (allAccounts()[0]?.id ?? null));
+  fillAccountSelect(src?.account_id ?? presetAccountId ?? (allAccounts()[0]?.id ?? null));
   $("#accountHint").textContent = allAccounts().length
     ? "平台的统计口径跟着账号走，改账号就会换平台"
     : "还没有账号，先点右侧「新建」创建第一个";
 
-  $("#catPicker").innerHTML = catPickerHTML(asset?.category ?? "domain");
-  $("#deleteBtn").hidden = !asset;
+  $("#catPicker").innerHTML = catPickerHTML(src?.category ?? "domain");
+  $("#deleteBtn").hidden = !asset || copy;
+  $("#copyBtn").hidden = !asset || copy;
+  $("#saveBtn span").textContent = copy ? "保存副本" : "保存";
 
-  const openHref = asset ? safeUrl(asset.url) : "";
+  const openHref = asset && !copy ? safeUrl(asset.url) : "";
   const openBtn = $("#openBtn");
   openBtn.hidden = !openHref;
   if (openHref) {
@@ -863,7 +1007,12 @@ function openSheet(asset = null, presetAccountId = null) {
   layer.hidden = false;
   requestAnimationFrame(() => {
     layer.classList.add("open");
-    setTimeout(() => $("#f-name").focus({ preventScroll: true }), 260);
+    // 复制时名字就是要改的那一项，进来直接选中，敲字即覆盖
+    setTimeout(() => {
+      const nameEl = $("#f-name");
+      nameEl.focus({ preventScroll: true });
+      if (copy) nameEl.select();
+    }, 260);
   });
 }
 
@@ -872,6 +1021,7 @@ function closeSheet() {
   layer.classList.remove("open");
   setTimeout(() => { layer.hidden = true; }, 340);
   state.editingId = null;
+  state.copySource = null;
 }
 
 function fillProviderList() {
@@ -923,7 +1073,7 @@ async function saveAsset() {
       toast("已保存修改");
     } else {
       await api("/api/assets", { method: "POST", body: JSON.stringify(payload) });
-      toast("资产已添加");
+      toast(state.copySource ? "已复制为新的资产" : "资产已添加");
     }
     closeSheet();
     await refresh();
@@ -1004,6 +1154,82 @@ async function saveAccount() {
     }
     closeAccountSheet();
     await refresh();
+  } catch (e) {
+    if (e.message !== "unauthorized") toast(e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------------------------------------------------------- 表单：平台重命名 */
+/* 平台是账号 platform 聚合出来的，没有独立表；改名 = 把这批账号的 platform 统一换掉。
+   后端会把资产上的 platform 投影一起刷，前端只需把本地筛选 / 折叠引用跟着挪。 */
+function openRenamePlatform(name) {
+  const p = state.tree.find((x) => x.platform === name);
+  if (!p) return;
+  state.renamingPlatform = name;
+  $("#platTitle").textContent = "重命名平台";
+  $("#platSub").textContent = `${p.account_count} 个账号 · ${p.asset_count} 项资产会一起改名`;
+  $("#p-name").value = name;
+  $("#platHint").textContent = "只换称呼，资产不会丢；新名字下如果已经有账号，两边会合成一个平台。";
+  const layer = $("#platLayer");
+  layer.hidden = false;
+  requestAnimationFrame(() => {
+    layer.classList.add("open");
+    setTimeout(() => {
+      const el = $("#p-name");
+      el.focus({ preventScroll: true });
+      el.select();
+    }, 240);
+  });
+}
+
+function closePlatSheet() {
+  const layer = $("#platLayer");
+  layer.classList.remove("open");
+  setTimeout(() => { layer.hidden = true; }, 340);
+  state.renamingPlatform = null;
+}
+
+async function savePlatformName() {
+  const from = state.renamingPlatform;
+  if (!from) return;
+  const to = $("#p-name").value.trim();
+  if (!to) {
+    const el = $("#p-name");
+    el.focus();
+    el.style.borderColor = "var(--red)";
+    setTimeout(() => (el.style.borderColor = ""), 1600);
+    toast("平台名不能为空", true);
+    return;
+  }
+  const btn = $("#platSave");
+  btn.disabled = true;
+  try {
+    if (to !== from) {
+      const r = await api(`/api/platforms/${encodeURIComponent(from)}/rename`, {
+        method: "POST",
+        body: JSON.stringify({ to }),
+      });
+      // 本地引用跟着改名，否则筛选 / 折叠 / 账号内筛选会指向已经不存在的旧平台名
+      if (state.platform === from) state.platform = to;
+      if (state.collapsedPlatforms.has(from)) {
+        state.collapsedPlatforms.delete(from);
+        state.collapsedPlatforms.add(to);
+        saveFolded();
+      }
+      for (const key of [...state.collapsedAccounts]) {
+        const [pfx, ...rest] = key.split("|");
+        if (pfx !== from) continue;
+        state.collapsedAccounts.delete(key);
+        state.collapsedAccounts.add([to, ...rest].join("|"));
+      }
+      saveFolded();
+      state.accCat.clear();
+      await refresh();
+      toast(r.merged ? `已改名为「${to}」，并合并到已有平台` : `已改名为「${to}」`);
+    }
+    closePlatSheet();
   } catch (e) {
     if (e.message !== "unauthorized") toast(e.message, true);
   } finally {
@@ -1320,6 +1546,15 @@ function bind() {
     renderChips();
     renderBoard();
   });
+  // 已托管 / 未托管：只看域名，别的类别跟着被筛掉
+  $("#hostChips").addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if (!chip) return;
+    state.host = chip.dataset.host;
+    state.accCat.clear();
+    renderChips();
+    renderBoard();
+  });
 
   // 搜索结果里的归属速览：点一行打开该域名的详情
   $("#provStrip").addEventListener("click", (e) => {
@@ -1364,6 +1599,9 @@ function bind() {
       if (act === "add-asset") {
         openSheet(null, Number(actBtn.dataset.account));
       }
+      if (act === "rename-platform") {
+        openRenamePlatform(actBtn.dataset.platform);
+      }
       return;
     }
     // 账号头右侧的类别徽章 / 账号内段头：只筛「这一个账号」的资产列表。
@@ -1402,6 +1640,7 @@ function bind() {
       const key = accEl.dataset.acc;
       if (state.collapsedAccounts.has(key)) state.collapsedAccounts.delete(key);
       else state.collapsedAccounts.add(key);
+      saveFolded();
       accEl.classList.toggle("folded");
       accHead.setAttribute("aria-expanded", String(!accEl.classList.contains("folded")));
       return;
@@ -1412,6 +1651,7 @@ function bind() {
       const name = el.dataset.platform;
       if (state.collapsedPlatforms.has(name)) state.collapsedPlatforms.delete(name);
       else state.collapsedPlatforms.add(name);
+      saveFolded();
       el.classList.toggle("folded");
       platHead.setAttribute("aria-expanded", String(!el.classList.contains("folded")));
     }
@@ -1465,6 +1705,26 @@ function bind() {
     if (u) window.open(u, "_blank", "noopener,noreferrer");
   });
   $("#saveBtn").addEventListener("click", saveAsset);
+  // 编辑弹层里点「复制」→ 同一个弹层切成复制模式（字段照抄、不带 id）
+  $("#copyBtn").addEventListener("click", () => {
+    const asset = state.assets.find((a) => a.id === state.editingId);
+    if (asset) openSheet(asset, null, { copy: true });
+  });
+  // 复制模式下链接跟着名称走：把链接里的旧名称换成新名称（大小写不敏感，
+  // 因为台账里常见「DemoApp」配 https://demoapp.example 这种大小写不一致的写法）。
+  // 只在「链接还没被手动改过」时生效，改了别处的链接不会被覆盖。
+  $("#f-name").addEventListener("input", () => {
+    const src = state.copySource;
+    const urlEl = $("#f-url");
+    if (!src || !src.url) return;
+    if (urlEl.value !== src.url) return;
+    const from = String(src.name || "").trim();
+    const to = $("#f-name").value.trim();
+    if (!from || !to) return;
+    if (!src.url.toLowerCase().includes(from.toLowerCase())) return;
+    urlEl.value = replaceCI(src.url, from, to);
+    src.url = urlEl.value;
+  });
   $("#sheetBackdrop").addEventListener("click", closeSheet);
   $("#deleteBtn").addEventListener("click", () => {
     const asset = state.assets.find((a) => a.id === state.editingId);
@@ -1493,6 +1753,14 @@ function bind() {
   $("#accSave").addEventListener("click", saveAccount);
   $("#accForm").addEventListener("submit", (e) => { e.preventDefault(); saveAccount(); });
   $$('#accLayer [data-close="acc"]').forEach((el) => el.addEventListener("click", closeAccountSheet));
+
+  // 平台改名
+  $("#platClose").addEventListener("click", closePlatSheet);
+  $("#platCancel").addEventListener("click", closePlatSheet);
+  $("#platSave").addEventListener("click", savePlatformName);
+  $("#platForm").addEventListener("submit", (e) => { e.preventDefault(); savePlatformName(); });
+  $("#p-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); savePlatformName(); } });
+  $$('#platLayer [data-close="plat"]').forEach((el) => el.addEventListener("click", closePlatSheet));
 
   // 定时备份
   $("#bkClose").addEventListener("click", closeBackupSheet);
@@ -1531,6 +1799,7 @@ function bind() {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
     if (e.key === "Escape") {
       if (!$("#confirmLayer").hidden) return closeConfirm();
+      if (!$("#platLayer").hidden) return closePlatSheet();
       if (!$("#backupLayer").hidden) return closeBackupSheet();
       if (!$("#accLayer").hidden) return closeAccountSheet();
       if (!$("#sheetLayer").hidden) return closeSheet();
@@ -1544,6 +1813,7 @@ function bind() {
 
   window.addEventListener("scroll", () => {
     $("#topbar").classList.toggle("scrolled", window.scrollY > 8);
+    rememberScroll();
   }, { passive: true });
 }
 
@@ -1571,6 +1841,8 @@ async function boot(afterUnlock = false) {
   syncViewButtons();
   $("#sortSelect").value = state.sort;
   await refresh();
+  // 数据渲染完、页面有真实高度了，再把上次的滚动位置还回去
+  restoreScrollSoon();
 }
 
 bind();

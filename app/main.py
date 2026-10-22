@@ -303,6 +303,10 @@ class ImportPayload(BaseModel):
     assets: list[dict] = Field(default_factory=list)
 
 
+class PlatformRenameIn(BaseModel):
+    to: str = Field(min_length=1, max_length=80)
+
+
 # ---------------------------------------------------------------- 聚合
 def yearly_of(item: dict) -> float:
     if item["cycle"] == "yearly":
@@ -566,6 +570,62 @@ def update_account(
         )
         row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
     return dict(row)
+
+
+@app.post("/api/platforms/{name}/rename")
+def rename_platform(
+    name: str,
+    payload: PlatformRenameIn,
+    password: str | None = Header(default=None, alias="X-App-Password"),
+) -> dict[str, Any]:
+    """平台重命名。
+
+    平台不是独立的表 —— 它由 accounts.platform 归一后聚合出来，所以改名就是：
+    把这批账号的 platform 一次性换成新名字，再把资产上的 platform 投影同步刷一遍。
+    目标名字已经有账号时不会报错，等价于两个平台合并（同名账号会并存，需要自己去合并）。
+    """
+    guard(password)
+    old = (name or "").strip()
+    new = (payload.to or "").strip()
+    if not old or not new:
+        raise HTTPException(status_code=400, detail="平台名不能为空")
+    if old == "未归类" or new == "未归类":
+        raise HTTPException(status_code=400, detail="「未归类」是兜底分组，不能改名或改成它")
+    if old == new:
+        return {"from": old, "to": new, "accounts": 0, "assets": 0, "merged": False}
+
+    ts = now_iso()
+    with db() as conn:
+        ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM accounts WHERE ifnull(platform,'')=?", (old,)
+        ).fetchall()]
+        if not ids:
+            raise HTTPException(status_code=404, detail="这个平台下没有账号")
+        existed = conn.execute(
+            "SELECT count(*) AS n FROM accounts WHERE ifnull(platform,'')=?", (new,)
+        ).fetchone()["n"]
+        conn.execute(
+            "UPDATE accounts SET platform=?, updated_at=? WHERE ifnull(platform,'')=?",
+            (new, ts, old),
+        )
+        # 投影字段跟着刷：账号下的资产统一改到新平台名
+        marks = ",".join("?" * len(ids))
+        changed = conn.execute(
+            f"UPDATE assets SET platform=? WHERE account_id IN ({marks}) AND ifnull(platform,'')<>?",
+            [new, *ids, new],
+        ).rowcount
+        # 没有归属账号、但文本上还写着旧平台名的孤儿资产也一起改
+        changed += conn.execute(
+            "UPDATE assets SET platform=? WHERE account_id IS NULL AND ifnull(platform,'')=?",
+            (new, old),
+        ).rowcount
+    return {
+        "from": old,
+        "to": new,
+        "accounts": len(ids),
+        "assets": changed,
+        "merged": bool(existed),
+    }
 
 
 @app.delete("/api/accounts/{account_id}")

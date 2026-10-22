@@ -54,6 +54,7 @@
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M14.5 5.5l4 4"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9.5 7V5a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v2M6 7l1 12.2a2 2 0 0 0 2 1.8h6a2 2 0 0 0 2-1.8L18 7"/></symbol>
   <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9.5 9.5"/><path d="M19 14.5V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3.5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.6" y="8.6" width="11.4" height="11.4" rx="2.4"/><path d="M15.4 8.6V6.2a2 2 0 0 0-2-2H6.2a2 2 0 0 0-2 2v7.2a2 2 0 0 0 2 2h2.4"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
   <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.2v5.2l3.2 2"/></symbol>
@@ -138,6 +139,7 @@
     <div class="chips" id="categoryChips"></div>
     <div class="chips chips-sub" id="platformChips"></div>
     <div class="chips chips-sub" id="providerChips" hidden></div>
+    <div class="chips chips-sub" id="hostChips" hidden></div>
   </div>
 
   <div class="alert-bar" id="alertBar" hidden>
@@ -358,6 +360,7 @@
 
     <footer class="sheet-foot">
       <button class="danger-btn" id="deleteBtn" type="button" hidden><svg><use href="#i-trash"/></svg>删除</button>
+      <button class="ghost-btn" id="copyBtn" type="button" hidden><svg><use href="#i-copy"/></svg><span>复制</span></button>
       <button class="ghost-btn" id="openBtn" type="button" hidden><svg><use href="#i-external"/></svg><span>打开链接</span></button>
       <div class="spacer"></div>
       <button class="ghost-btn" id="cancelBtn" type="button">取消</button>
@@ -429,6 +432,35 @@
       <div class="spacer"></div>
       <button class="ghost-btn" id="accCancel" type="button">取消</button>
       <button class="primary-btn" id="accSave" type="button"><svg><use href="#i-check"/></svg><span>保存</span></button>
+    </footer>
+  </div>
+</div>
+
+<!-- 平台重命名弹层 -->
+<div class="sheet-layer" id="platLayer" hidden>
+  <div class="sheet-backdrop" data-close="plat"></div>
+  <div class="sheet glass sheet-sm sheet-xs" role="dialog" aria-modal="true" aria-labelledby="platTitle">
+    <div class="sheet-grabber"></div>
+    <header class="sheet-head">
+      <div>
+        <h2 id="platTitle">重命名平台</h2>
+        <p id="platSub">改名后，这个平台的账号与资产会一起跟过去</p>
+      </div>
+      <button class="icon-btn ghost" id="platClose" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+    </header>
+
+    <form class="sheet-body" id="platForm" novalidate>
+      <div class="field">
+        <label for="p-name">平台名称 <em>*</em></label>
+        <input id="p-name" maxlength="80" list="platformList" placeholder="例如：Cloudflare" />
+        <p class="hint" id="platHint"></p>
+      </div>
+    </form>
+
+    <footer class="sheet-foot">
+      <div class="spacer"></div>
+      <button class="ghost-btn" id="platCancel" type="button">取消</button>
+      <button class="primary-btn" id="platSave" type="button"><svg><use href="#i-check"/></svg><span>保存</span></button>
     </footer>
   </div>
 </div>
