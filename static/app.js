@@ -295,6 +295,40 @@ function roll(assets) {
   return { count: assets.length, byCat, costs, cny: costs.CNY || 0, expiring, expired };
 }
 
+/* ---------------------------------------------------------- 折叠动画 */
+/* CSS 里 grid-template-rows 的 1fr→0fr 在本机 Chromium 上是瞬间跳变的（实测），
+   所以改成「实测高度」驱动：先把当前高度写成内联值 → 切 class → 再设目标高度，
+   transitionend 后把内联高度还回去（展开交给 auto，收起交给 .folded 的 height:0）。 */
+const prefersReduced = () =>
+  !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+function applyFold(el, folded) {
+  const body = el.querySelector(".plat-body, .acc-body");
+  if (!body) return;
+  if (body._foldCleanup) body._foldCleanup(); // 连点时先把上一次的收尾逻辑撤掉
+  if (prefersReduced()) {
+    el.classList.toggle("folded", folded);
+    body.style.height = "";
+    return;
+  }
+  const from = body.getBoundingClientRect().height;
+  body.style.height = `${from}px`;
+  void body.offsetHeight; // 强制重排：先让起始高度生效，否则 class 一变就跳过去了
+  el.classList.toggle("folded", folded);
+  const to = folded ? 0 : body.scrollHeight;
+  body.style.height = `${to}px`;
+  const cleanup = () => {
+    body.removeEventListener("transitionend", onEnd);
+    clearTimeout(timer);
+    body._foldCleanup = null;
+    body.style.height = "";
+  };
+  const onEnd = (ev) => { if (ev.target === body) cleanup(); };
+  body._foldCleanup = cleanup;
+  body.addEventListener("transitionend", onEnd);
+  const timer = setTimeout(cleanup, 560); // transitionend 没来时的兜底
+}
+
 /* ---------------------------------------------------------- 数据整理 */
 function applyTree(data) {
   state.tree = data.platforms || [];
@@ -655,7 +689,7 @@ function accountBlock(acc, platform) {
         <button class="mini-icon acc-fold" tabindex="-1" aria-hidden="true">${icon("chev")}</button>
       </div>
     </div>
-    <div class="acc-body"><div class="ac-grid">${tiles || `<div class="acc-empty">这个账号下还没有登记资产</div>`}</div></div>
+    <div class="acc-body"><div class="acc-body-in"><div class="ac-grid">${tiles || `<div class="acc-empty">这个账号下还没有登记资产</div>`}</div></div></div>
   </div>`;
 }
 
@@ -666,7 +700,7 @@ function canReorderPlatforms() {
     state.platform === "all" && state.provider === "all" && state.host === "all" && !state.onlyUrgent;
 }
 
-function platformBlock(p) {
+function platformBlock(p, i = 0) {
   const folded = state.collapsedPlatforms.has(p.platform);
   const r = p.roll || roll(p.accounts.flatMap((a) => a.assets));
   const col = platformColor(p.platform);
@@ -683,7 +717,7 @@ function platformBlock(p) {
        <button class="mini-icon plat-grip" data-grip="1" title="拖动调整平台顺序"><svg><use href="#i-grip"/></svg></button>`
     : "";
 
-  return `<section class="plat glass ${folded ? "folded" : ""}" data-platform="${esc(p.platform)}" style="--p:${col}">
+  return `<section class="plat glass ${folded ? "folded" : ""}" data-platform="${esc(p.platform)}" style="--p:${col};--i:${i}">
     <header class="plat-head" role="button" tabindex="0" aria-expanded="${!folded}">
       <span class="plat-mark">${icon(platformIcon(p.platform))}</span>
       <div class="plat-id">
@@ -695,12 +729,23 @@ function platformBlock(p) {
       ${p.platform === "未归类" ? "" : `<button class="mini-icon" data-act="rename-platform" data-platform="${esc(p.platform)}" title="重命名平台（账号与资产一起改）">${icon("edit")}</button>`}
       <button class="plat-fold" tabindex="-1" aria-hidden="true">${icon("chev")}</button>
     </header>
-    <div class="plat-body">${p.accounts.map((a) => accountBlock(a, p.platform)).join("")}</div>
+    <div class="plat-body"><div class="plat-body-in">${p.accounts.map((a) => accountBlock(a, p.platform)).join("")}</div></div>
   </section>`;
 }
 
+/* 入场动画只播一次：容器第一次绘制（或切视图后被重置）时加 .anim-in，
+   动画跑完就摘掉 —— 否则每次搜索 / 筛选 / 保存的重渲染都会重播淡入，看着像在闪。 */
+function playEntrance(el, ms) {
+  if (!el || el.dataset.painted === "1") return;
+  el.dataset.painted = "1";
+  el.classList.add("anim-in");
+  setTimeout(() => el.classList.remove("anim-in"), ms);
+}
+
 function renderGroupBoard(list) {
-  $("#groupBoard").innerHTML = list.map(platformBlock).join("");
+  const board = $("#groupBoard");
+  board.innerHTML = list.map(platformBlock).join("");
+  playEntrance(board, 700);
 }
 
 /* ---------------------------------------------------------- 渲染：平铺 */
@@ -725,7 +770,8 @@ function assetCard(a, i) {
   const host = hostOf(a.url);
   const go = safeUrl(a.url);
   const acc = a.provider_account ? `<span class="prov-sub">${esc(a.provider_account)}</span>` : "";
-  return `<article class="asset" data-id="${a.id}" style="--i:${i};--c:${col};--c-soft:${hexToRgba(col, 0.13)};--c-line:${hexToRgba(col, 0.22)}" tabindex="0" role="button" aria-label="${esc(a.name)}">
+  // 入场错峰最多 10 档：56 条资产挨个 delay 会让列表看起来「半天才出来」
+  return `<article class="asset" data-id="${a.id}" style="--i:${Math.min(i, 10)};--c:${col};--c-soft:${hexToRgba(col, 0.13)};--c-line:${hexToRgba(col, 0.22)}" tabindex="0" role="button" aria-label="${esc(a.name)}">
     <div class="asset-icon">${icon(c.icon)}</div>
     <div class="asset-main">
       <div class="asset-name">${a.pinned ? `<svg class="pin"><use href="#i-pin"/></svg>` : ""}${esc(a.name)}</div>
@@ -850,6 +896,7 @@ function renderBoard() {
   if (!list.length) { grid.innerHTML = ""; showEmpty(empty); return; }
   empty.hidden = true;
   grid.innerHTML = list.map(assetCard).join("");
+  playEntrance(grid, 900);
 }
 
 function showEmpty(empty) {
@@ -1742,6 +1789,9 @@ function bind() {
     state.view = b.dataset.view;
     localStorage.setItem("al-view", state.view);
     syncViewButtons();
+    // 切视图是用户主动操作，允许重新播一次入场动画
+    delete $("#groupBoard").dataset.painted;
+    delete $("#assetGrid").dataset.painted;
     renderBoard();
   });
   $("#sortSelect").addEventListener("change", (e) => {
@@ -1806,22 +1856,24 @@ function bind() {
     if (accHead) {
       const accEl = accHead.closest(".acc");
       const key = accEl.dataset.acc;
-      if (state.collapsedAccounts.has(key)) state.collapsedAccounts.delete(key);
-      else state.collapsedAccounts.add(key);
+      const willFold = !state.collapsedAccounts.has(key);
+      if (willFold) state.collapsedAccounts.add(key);
+      else state.collapsedAccounts.delete(key);
       saveFolded();
-      accEl.classList.toggle("folded");
-      accHead.setAttribute("aria-expanded", String(!accEl.classList.contains("folded")));
+      applyFold(accEl, willFold);
+      accHead.setAttribute("aria-expanded", String(!willFold));
       return;
     }
     const platHead = e.target.closest(".plat-head");
     if (platHead) {
       const el = platHead.closest(".plat");
       const name = el.dataset.platform;
-      if (state.collapsedPlatforms.has(name)) state.collapsedPlatforms.delete(name);
-      else state.collapsedPlatforms.add(name);
+      const willFold = !state.collapsedPlatforms.has(name);
+      if (willFold) state.collapsedPlatforms.add(name);
+      else state.collapsedPlatforms.delete(name);
       saveFolded();
-      el.classList.toggle("folded");
-      platHead.setAttribute("aria-expanded", String(!el.classList.contains("folded")));
+      applyFold(el, willFold);
+      platHead.setAttribute("aria-expanded", String(!willFold));
     }
   });
 

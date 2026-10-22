@@ -612,10 +612,13 @@ html[data-theme="dark"] .segmented button.active { background: rgba(255, 255, 25
   box-shadow: var(--inset-hi-soft), var(--shadow-sm), 0 0 0 1px var(--glass-edge);
   transition: transform 0.38s var(--ease-spring), box-shadow 0.35s var(--ease-out),
     border-color 0.3s, background 0.4s;
-  animation: cardIn 0.5s var(--ease-out) both;
-  animation-delay: calc(var(--i, 0) * 26ms);
   overflow: hidden;
   text-align: left;
+}
+/* 同上：平铺 / 列表视图的入场只在头一次绘制时播 */
+#assetGrid.anim-in .asset {
+  animation: cardIn 0.5s var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 26ms);
 }
 @keyframes cardIn {
   from { opacity: 0; transform: translateY(10px) scale(0.985); }
@@ -1259,6 +1262,10 @@ html[data-theme="dark"] .field input[type="date"]::-webkit-calendar-picker-indic
   border-radius: 24px;
   overflow: hidden;
   padding: 0;
+}
+/* 入场动画只在「第一次绘制 / 切视图」时播一次（.anim-in 由 JS 短暂加上），
+   否则每次搜索、筛选、保存重渲染都会让所有卡片重新淡入，看着像在闪。 */
+#groupBoard.anim-in .plat {
   animation: cardIn 0.5s var(--ease-out) both;
   animation-delay: calc(var(--i, 0) * 26ms);
 }
@@ -1319,12 +1326,21 @@ html[data-theme="dark"] .field input[type="date"]::-webkit-calendar-picker-indic
 }
 .plat-fold svg { width: 16px; height: 16px; }
 .plat.folded .plat-fold { transform: rotate(-90deg); }
-.plat.folded .plat-body { display: none; }
 
+/* 折叠动画：高度由 JS 实测后过渡（见 applyFold()）。
+   grid-template-rows 1fr→0fr 在本机 Chromium 上会直接跳变，不可靠，别再用。
+   外层只管高度 + 裁剪，内层负责内边距（padding 放在外层会让 0 高度时仍留 12px）。 */
 .plat-body {
+  overflow: hidden;
+  transition: height 0.34s var(--ease-out);
+}
+.plat-body-in {
   display: flex; flex-direction: column; gap: 8px;
   padding: 0 12px 12px;
 }
+.plat.folded .plat-body { height: 0; }
+/* 收起后把内容移出可聚焦序列；延迟到动画结束再隐藏，否则会闪一下 */
+.plat.folded .plat-body-in { visibility: hidden; transition: visibility 0s linear 0.34s; }
 
 /* 账号行 */
 .acc {
@@ -1462,9 +1478,16 @@ html[data-theme="dark"] .field input[type="date"]::-webkit-calendar-picker-indic
 .mini-icon:active { transform: scale(0.9); }
 .mini-icon.acc-fold { opacity: 1; transition: transform 0.4s var(--ease-spring); }
 .acc.folded .acc-fold { transform: rotate(-90deg); }
-.acc.folded .acc-body { display: none; }
 
-.acc-body { padding: 0 12px 12px; }
+/* 账号折叠同理：外层高度过渡 + 裁剪，内层放内边距 */
+.acc-body {
+  overflow: hidden;
+  transition: height 0.3s var(--ease-out);
+}
+.acc-body-in { padding: 0 12px 12px; }
+.acc.folded .acc-body { height: 0; }
+.acc.folded .acc-body-in { visibility: hidden; transition: visibility 0s linear 0.3s; }
+
 .ac-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
@@ -1591,9 +1614,9 @@ html[data-theme="dark"] .ac-day.soon { color: #ffc759; }
   .plat-head { flex-wrap: wrap; padding: 12px 13px; gap: 10px; }
   .plat-stats { margin-left: auto; }
   .plat-id h3 { font-size: 14.5px; }
-  .plat-body { padding: 0 8px 8px; }
+  .plat-body-in { padding: 0 8px 8px; }
   .acc-head { padding: 9px 10px; gap: 9px; }
-  .acc-body { padding: 0 10px 10px; }
+  .acc-body-in { padding: 0 10px 10px; }
   .ac-grid { grid-template-columns: 1fr 1fr; }
   .acc-form { grid-template-columns: 1fr; }
   #accLayer .sheet { width: 100vw; max-height: 92vh; }
@@ -2099,4 +2122,10 @@ html[data-theme="dark"] .ac-day.soon { color: #ffc759; }
   outline: 2px dashed color-mix(in srgb, var(--p) 55%, transparent);
   outline-offset: -2px;
   transform: scale(0.995);
+}
+
+/* 折叠动画的可见性收尾时间要跟上面两处 transition-duration 对齐（0.42/0.38 展开、0.3/0.28 收起） */
+@media (prefers-reduced-motion: reduce) {
+  .plat-body, .acc-body { transition: none; }
+  .plat.folded .plat-body-in, .acc.folded .acc-body-in { transition: none; }
 }
