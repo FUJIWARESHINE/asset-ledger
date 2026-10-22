@@ -583,7 +583,9 @@ function assetTile(a) {
       style="--c:${col};--c-soft:${hexToRgba(col, 0.12)};--c-line:${hexToRgba(col, 0.2)}">
       <span class="ac-ico">${icon(c.icon)}</span>
       <span class="ac-name">${a.pinned ? `<svg class="pin"><use href="#i-pin"/></svg>` : ""}${esc(a.name)}</span>
-      ${provChip(a, "tiny")}
+      ${a.provider
+        ? `<i class="ac-prov-dot" style="--pc:${providerColor(a.provider)}" title="${esc(`申请商：${a.provider}${a.provider_account ? "（" + a.provider_account + "）" : ""}`)}"></i>`
+        : ""}
       ${a.days_left !== null && a.days_left !== undefined
         ? `<span class="ac-day ${a.expiry_state}">${esc(expiryShort(a))}</span>` : ""}
       ${go ? `<span class="ac-go" data-go="${a.id}" title="打开 ${esc(hostOf(go))}"><svg><use href="#i-external"/></svg></span>` : ""}
@@ -756,11 +758,11 @@ function badgeFor(a) {
   return `<span class="badge ${a.expiry_state}"><i class="bdot"></i>${expiryText(a)}</span>`;
 }
 
-function provChip(a, extra = "") {
+function provChip(a) {
   if (!a.provider) return "";
   const tip = `申请商：${a.provider}${a.provider_account ? "（" + a.provider_account + "）" : ""}`;
   const col = providerColor(a.provider);
-  return `<span class="prov-chip ${extra}" title="${esc(tip)}" style="--pc:${col}">${esc(a.provider)}</span>`;
+  return `<span class="prov-chip" title="${esc(tip)}" style="--pc:${col}">${esc(a.provider)}</span>`;
 }
 
 function assetCard(a, i) {

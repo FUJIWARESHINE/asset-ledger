@@ -1741,12 +1741,6 @@ html[data-theme="dark"] .ac-day.soon { color: #ffc759; }
   border: 1px solid color-mix(in srgb, var(--pc) 24%, transparent);
   white-space: nowrap;
 }
-.prov-chip.tiny {
-  height: 14px;
-  padding: 0 4px;
-  font-size: 8.5px;
-  border-radius: 4px;
-}
 .asset-prov {
   display: flex;
   align-items: center;
@@ -2131,4 +2125,17 @@ html[data-theme="dark"] .ac-day.soon { color: #ffc759; }
 @media (prefers-reduced-motion: reduce) {
   .plat-body, .acc-body { transition: none; }
   .plat.folded .plat-body-in, .acc.folded .acc-body-in { transition: none; }
+}
+
+/* ---------------------------------------------- 磁贴里的申请商标记
+   磁贴只有 180~215px：icon + 域名 + 剩余天数已经占满，再塞「DigitalPlat One」这种全名徽章
+   会把域名挤到只剩几个字（实测 nameW 从 131 掉到 30 左右）。
+   所以磁贴里只用一颗品牌色圆点表示申请商，全名走 title 悬浮提示；
+   卡片视图（.asset-prov）与详情弹层里仍然是完整文字。 */
+.ac-prov-dot {
+  flex: none;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--pc, var(--text-3));
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--text-3) 22%, transparent);
 }
