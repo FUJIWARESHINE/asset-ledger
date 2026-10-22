@@ -134,8 +134,16 @@ python seed.py --replace --base http://127.0.0.1:8787
 - **不改后端**：走已发布的 `POST /api/assets`，老版本台账也能直接连
 - **有队列和去重**：填完先进本地队列，确认后批量导入；account + 名称重复的自动跳过
 
-装法：`edge://extensions` → 开发人员模式 → 加载解压缩的扩展 → 选 `extension/` 目录。
-详见 [`extension/README.md`](extension/README.md)。
+装法（两种，任选）：
+
+- **推荐**：到 [Releases](https://github.com/FUJIWARESHINE/asset-ledger/releases) 下载 `asset-ledger-extension-*.zip`，
+  解压后 `edge://extensions` → 开发人员模式 → 加载解压缩的扩展
+- **正式安装**（无开发者模式提示、自动更新）：下载 `install.ps1` 右键用 PowerShell 运行，
+  它把扩展 ID 和更新地址写进当前用户策略，重启浏览器即自动安装
+
+扩展发版用 `ext-v*` tag（如 `ext-v1.0.1`），产物是签名 crx + zip + `update.xml`；
+镜像发版用 `v*` tag，两条流水线靠 tag 前缀隔离，互不触发。
+详见 [`extension/README.md`](extension/README.md) 与 [`extension/INSTALL.md`](extension/INSTALL.md)。
 
 ## 技术栈
 
@@ -154,6 +162,8 @@ extension/            # 浏览器扩展「快速录入」，纯客户端，不�
 seed.py               # 命令行灌示例数据
 tools/import_excel.py # Excel 转导入 JSON 的小工具
 tools/make_icons.py   # 生成扩展图标（纯标准库，不依赖 Pillow）
+tools/build_extension.py  # 打包 crx3 / zip / update.xml（标准库 + openssl）
+tools/verify_crx.py       # 反向解析 crx 并验签，CI 里也跑这个
 ```
 
 ## API

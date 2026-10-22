@@ -99,3 +99,59 @@ extension/
 
 源码里已加了几处针对扩展首次加载的容错：`chrome.storage` / `chrome.permissions`
 在扩展刚被载入时可能长时间不 resolve，`withTimeout` 兜住了，界面不会白屏。
+
+## 打包与发布
+
+扩展和 Docker 镜像是**两条互不干扰的流水线**，靠 tag 前缀区分：
+
+| 改动 | tag | 触发的 workflow | 产物 |
+|---|---|---|---|
+| `extension/` 或扩展相关代码 | `ext-v1.0.1` | `extension-release.yml` | crx / zip / update.xml / 安装脚本 → GitHub Release |
+| 后端或前端台账本体 | `v1.1.0` | `docker-publish.yml` | 多架构镜像 → GHCR + Docker Hub |
+
+push 到 `main` 不触发任何一个；`extension/` 和 `tools/` 已在 `.dockerignore` 里，
+扩展改动连镜像的构建上下文都影响不到。
+
+### 发版步骤
+
+```bash
+# 1. 改版本号（tag 必须与 manifest 版本一致，否则流水线会拦下）
+#    extension/manifest.json  "version": "1.0.1"
+git commit -am "feat(extension): ..."
+git tag -a ext-v1.0.1 -m "扩展 v1.0.1"
+git push origin main ext-v1.0.1
+```
+
+CI 会做这些事：打包 → 校验 crx 签名 → 生成 `update.xml`（codebase 指向本次 release）
+→ 把 `{{EXT_ID}}` 填进安装说明和 ps1 → 发布 Release。
+
+### 本地打包
+
+```bash
+python tools/build_extension.py --gen-key        # 首次，生成 extension-key.pem
+python tools/build_extension.py \
+  --base-url https://github.com/FUJIWARESHINE/asset-ledger/releases/download/ext-v1.0.0
+python tools/verify_crx.py --expect-id dist/extension-id.txt
+```
+
+产物在 `dist/`（已 gitignore）。`build_extension.py` 只用标准库 + openssl，
+手写 CRX3 头部 protobuf、RSA-2048 PKCS#1 v1.5 签名，签完还会自校验一遍。
+
+### 签名密钥
+
+`extension-key.pem` **绝不能进仓库**（`.gitignore` 已挡）。CI 用仓库 secret
+`EXTENSION_KEY_PEM` 里的同一把私钥，保证扩展 ID 不变：
+
+```
+iihpkiifbflladcenppkahngojlbcbio
+```
+
+**换密钥 = 换扩展 ID = 已装用户再也收不到更新**，务必先备份私钥。
+
+### 关于 update_url
+
+`manifest.json` 里的 `update_url` 指向
+`releases/latest/download/update.xml`，装过的人会自动跟随最新 Release。
+两个前提：该仓库的 GitHub Release 只能有扩展的（镜像那边不建 Release），
+以及**如果将来要上架商店，必须删掉这个字段**。
+

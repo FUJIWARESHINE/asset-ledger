@@ -51,6 +51,22 @@ Set-ItemProperty -Path $k -Name 1 `
   `HKCU\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist` 下的对应值，重启浏览器即卸载
 - 想要 Chrome 也装，把路径里的 `Microsoft\Edge` 换成 `Google\Chrome`（`install.ps1` 两个都写了）
 
+## 方式 B 装了没反应？按这个顺序查
+
+1. **浏览器要完全退出**（任务栏托盘图标右键 → 退出），只关窗口不算
+2. 地址栏打开 `edge://policy`，确认 `ExtensionInstallForcelist` 有值，且是
+   `{{EXT_ID}};https://.../update.xml` 这个格式
+3. **MIME 坑**：本仓库是从 GitHub Release 直连下载 crx 的，而 GitHub 给 `.crx` 的
+   `Content-Type` 是 `application/octet-stream`。微软文档要求
+   `application/x-chrome-extension`，部分环境会因此**静默失败**（策略生效但装不上）。
+   遇到这种情况，把 `update.xml` 和 crx 放到自己的 NAS 上并配对 MIME：
+
+   ```nginx
+   types { application/x-chrome-extension crx; }
+   ```
+   然后把策略里的 `update.xml` 地址换成你自己的（crx 的 `codebase` 也要改成你的地址）
+4. 还是不行就退回**方式 A**，它是零依赖的
+
 ## 连不上台账
 
 | 现象 | 处理 |
