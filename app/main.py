@@ -406,10 +406,17 @@ def build_tree() -> list[dict[str, Any]]:
     return platforms
 
 
+def find_account_row(conn: sqlite3.Connection, account_id: int | None) -> sqlite3.Row | None:
+    """查账号，找不到返回 None（不抛错），供导入回退逻辑使用。"""
+    if not account_id:
+        return None
+    return conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
+
+
 def find_account(conn: sqlite3.Connection, account_id: int | None) -> sqlite3.Row | None:
     if not account_id:
         return None
-    row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
+    row = find_account_row(conn, account_id)
     if not row:
         raise HTTPException(status_code=400, detail="归属账号不存在")
     return row
@@ -755,6 +762,9 @@ def import_all(
         for r in conn.execute("SELECT id, platform, name FROM accounts"):
             key_to_id[(r["platform"].strip().lower(), r["name"].strip().lower())] = r["id"]
 
+        # 导出文件里的 account_id 是导出方库里的 id，导入后 id 空间不同
+        # （replace 清空后自增往往整体前移），必须按账号身份重映射，不能直接沿用。
+        old_to_new: dict[int, int] = {}
         for raw in payload.accounts:
             platform = str(raw.get("platform") or "").strip()
             name = str(raw.get("name") or "").strip()
@@ -762,16 +772,20 @@ def import_all(
                 continue
             key = (platform.lower(), name.lower())
             if key in key_to_id:
-                continue
-            key_to_id[key] = conn.execute(
-                """INSERT INTO accounts (platform, name, label, url, status, credential_hint,
-                        notes, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                (platform, name, str(raw.get("label") or ""), str(raw.get("url") or ""),
-                 str(raw.get("status") or "active"), str(raw.get("credential_hint") or ""),
-                 str(raw.get("notes") or ""), ts, ts),
-            ).lastrowid
-            created_accounts += 1
+                new_id = key_to_id[key]
+            else:
+                new_id = conn.execute(
+                    """INSERT INTO accounts (platform, name, label, url, status, credential_hint,
+                            notes, created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (platform, name, str(raw.get("label") or ""), str(raw.get("url") or ""),
+                     str(raw.get("status") or "active"), str(raw.get("credential_hint") or ""),
+                     str(raw.get("notes") or ""), ts, ts),
+                ).lastrowid
+                key_to_id[key] = new_id
+                created_accounts += 1
+            if isinstance(raw.get("id"), int):
+                old_to_new[raw["id"]] = new_id
 
         for raw in payload.assets:
             try:
@@ -781,8 +795,13 @@ def import_all(
             data = item.model_dump()
             data["category"] = data["category"] if data["category"] in CATEGORY_IDS else "other"
 
+            # 先把导出方的旧 account_id 映射到本库的新 id
+            raw_acc_id = data.get("account_id")
+            if raw_acc_id is not None and raw_acc_id in old_to_new:
+                data["account_id"] = old_to_new[raw_acc_id]
+
             # 允许旧格式（只有 platform + account 文本）的备份导入
-            if not data.get("account_id"):
+            if not data.get("account_id") or find_account_row(conn, data["account_id"]) is None:
                 p = str(raw.get("platform") or "").strip()
                 a = str(raw.get("account") or "").strip()
                 if p and a:
