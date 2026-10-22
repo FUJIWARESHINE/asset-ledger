@@ -315,6 +315,10 @@ class ProviderRenameIn(BaseModel):
     to: str = Field(min_length=1, max_length=80)
 
 
+class PlatformOrderIn(BaseModel):
+    order: list[str] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------- 聚合
 def yearly_of(item: dict) -> float:
     if item["cycle"] == "yearly":
@@ -410,11 +414,27 @@ def guess_platform_kind(platform: str, assets: list[dict], known: dict[str, str]
     return "service"
 
 
+def platform_order(conn: sqlite3.Connection) -> list[str]:
+    """用户手工拖出来的平台顺序（settings.platform_order）。空列表表示按默认规则排。"""
+    row = conn.execute("SELECT value FROM settings WHERE key = 'platform_order'").fetchone()
+    if row is None:
+        return []
+    try:
+        raw = json.loads(row["value"])
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(raw, list):
+        return []
+    return [str(x) for x in raw if str(x).strip()]
+
+
 def build_tree() -> list[dict[str, Any]]:
     with db() as conn:
         acc_rows = [dict(r) for r in conn.execute("SELECT * FROM accounts")]
         asset_rows = [row_out(r) for r in conn.execute("SELECT * FROM assets")]
         kind_map = platform_kind_map(conn)
+        order_list = platform_order(conn)
+    order_rank = {name: i for i, name in enumerate(order_list)}
 
     index: dict[int, dict] = {}
     grouped: dict[str, list[dict]] = {}
@@ -469,7 +489,12 @@ def build_tree() -> list[dict[str, Any]]:
             "accounts": accounts_out,
         })
 
-    platforms.sort(key=lambda p: (-p["asset_count"], p["platform"].lower()))
+    # 平台顺序：用户拖过就按 platform_order 来，没登记过的平台排在后面按资产数/名字兜底
+    platforms.sort(key=lambda p: (
+        order_rank.get(p["platform"], len(order_rank)),
+        -p["asset_count"],
+        p["platform"].lower(),
+    ))
     return platforms
 
 
@@ -716,6 +741,15 @@ def rename_platform(
         # 平台属性跟着名字搬到新键上，旧键删掉免得以后误判
         drop_platform_kind(conn, old)
         put_platform_kind(conn, new, kind)
+        # 手工排好的顺序也要跟着改名走，否则改完名顺序会退回默认（资产数降序）
+        order = platform_order(conn)
+        if old in order:
+            order = list(dict.fromkeys(new if x == old else x for x in order))
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('platform_order', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (json.dumps(order, ensure_ascii=False),),
+            )
     return {
         "from": old,
         "to": new,
@@ -726,6 +760,28 @@ def rename_platform(
         "merged": bool(existed),
         "renamed": True,
     }
+
+
+@app.put("/api/platforms/order")
+def set_platform_order(
+    payload: PlatformOrderIn,
+    password: str | None = Header(default=None, alias="X-App-Password"),
+) -> dict[str, Any]:
+    """保存平台展示顺序（拖拽 / 上移下移的结果）。
+
+    只认库里真实存在的平台名：已改名或已删掉的旧名字会被自动丢弃，
+    没出现在列表里的平台仍然按「资产数降序」排在后面。
+    """
+    guard(password)
+    with db() as conn:
+        existing = {r["platform"] for r in conn.execute("SELECT DISTINCT platform FROM accounts")}
+        names = [n for n in dict.fromkeys(str(x).strip() for x in payload.order) if n and n in existing]
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('platform_order', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (json.dumps(names, ensure_ascii=False),),
+        )
+    return {"order": names}
 
 
 @app.post("/api/providers/{name}/rename")

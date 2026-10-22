@@ -2086,3 +2086,17 @@ html[data-theme="dark"] .ac-day.soon { color: #ffc759; }
 @media (max-width: 720px) {
   .kind-pick { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------- 平台排序（拖拽 + 上移下移） */
+.plat-move { display: inline-flex; align-items: center; gap: 1px; }
+.plat-move .mini-icon { width: 22px; height: 24px; }
+.plat-move svg { width: 13px; height: 13px; transform: rotate(180deg); }
+.plat-move .mini-icon:last-child svg { transform: none; }
+.plat-grip { cursor: grab; }
+.plat-grip:active { cursor: grabbing; }
+.plat.dragging {
+  opacity: 0.55;
+  outline: 2px dashed color-mix(in srgb, var(--p) 55%, transparent);
+  outline-offset: -2px;
+  transform: scale(0.995);
+}

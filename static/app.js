@@ -659,6 +659,13 @@ function accountBlock(acc, platform) {
   </div>`;
 }
 
+/* 平台顺序：只有在「没开任何筛选、分组视图」时才允许拖 / 上移下移。
+   一开筛选 DOM 里就不是全部平台了，按 DOM 顺序存会把被筛掉的位置弄乱。 */
+function canReorderPlatforms() {
+  return state.view === "group" && !state.q.trim() && state.cat === "all" &&
+    state.platform === "all" && state.provider === "all" && state.host === "all" && !state.onlyUrgent;
+}
+
 function platformBlock(p) {
   const folded = state.collapsedPlatforms.has(p.platform);
   const r = p.roll || roll(p.accounts.flatMap((a) => a.assets));
@@ -667,6 +674,14 @@ function platformBlock(p) {
   if (r.cny) stats.push(`<span class="ps"><b>${money(r.cny)}</b>年化</span>`);
   if (r.expiring) stats.push(`<span class="ps warn"><b>${r.expiring}</b>临近</span>`);
   if (r.expired) stats.push(`<span class="ps danger"><b>${r.expired}</b>过期</span>`);
+  const reorderable = canReorderPlatforms() && p.platform !== "未归类";
+  const tools = reorderable
+    ? `<span class="plat-move">
+         <button class="mini-icon" data-act="plat-up" data-platform="${esc(p.platform)}" title="上移一位"><svg class="up"><use href="#i-chev"/></svg></button>
+         <button class="mini-icon" data-act="plat-down" data-platform="${esc(p.platform)}" title="下移一位"><svg><use href="#i-chev"/></svg></button>
+       </span>
+       <button class="mini-icon plat-grip" data-grip="1" title="拖动调整平台顺序"><svg><use href="#i-grip"/></svg></button>`
+    : "";
 
   return `<section class="plat glass ${folded ? "folded" : ""}" data-platform="${esc(p.platform)}" style="--p:${col}">
     <header class="plat-head" role="button" tabindex="0" aria-expanded="${!folded}">
@@ -676,6 +691,7 @@ function platformBlock(p) {
         <p>${p.account_count} 个账号${p.accounts.some((a) => a.id === null) ? " · 含未归属" : ""} · ${esc(catSummary(r.byCat))}</p>
       </div>
       <div class="plat-stats">${stats.join("")}</div>
+      ${tools}
       ${p.platform === "未归类" ? "" : `<button class="mini-icon" data-act="rename-platform" data-platform="${esc(p.platform)}" title="重命名平台（账号与资产一起改）">${icon("edit")}</button>`}
       <button class="plat-fold" tabindex="-1" aria-hidden="true">${icon("chev")}</button>
     </header>
@@ -848,9 +864,8 @@ function showEmpty(empty) {
 
 /* ---------------------------------------------------------- 渲染：侧栏 */
 function renderPlatformBars() {
-  const rows = state.tree
-    .map((p) => ({ name: p.platform, accounts: p.account_count, assets: p.asset_count }))
-    .sort((a, b) => b.assets - a.assets);
+  // 顺序跟主区分组保持一致（用户拖过就按拖的顺序，否则按后端的默认顺序）
+  const rows = state.tree.map((p) => ({ name: p.platform, accounts: p.account_count, assets: p.asset_count }));
   const max = Math.max(1, ...rows.map((r) => r.assets));
 
   $("#platformBars").innerHTML = rows.length
@@ -1164,6 +1179,35 @@ async function saveAccount() {
   } finally {
     btn.disabled = false;
   }
+}
+
+/* ---------------------------------------------------------- 平台排序 */
+/* 顺序存后端 settings.platform_order（谁在前谁在后），build_tree 按它排；
+   没登记的平台排后面，按资产数降序兜底。 */
+async function savePlatformOrder() {
+  const names = [...$$("#groupBoard .plat")].map((el) => el.dataset.platform);
+  if (!names.length) return;
+  const rank = new Map(names.map((n, i) => [n, i]));
+  const fallback = names.length + 1;
+  state.tree.sort((a, b) =>
+    (rank.has(a.platform) ? rank.get(a.platform) : fallback) - (rank.has(b.platform) ? rank.get(b.platform) : fallback));
+  try {
+    await api("/api/platforms/order", {
+      method: "PUT",
+      body: JSON.stringify({ order: state.tree.map((p) => p.platform) }),
+    });
+  } catch (e) {
+    if (e.message !== "unauthorized") toast(e.message, true);
+  }
+}
+
+function movePlatform(name, dir) {
+  const i = state.tree.findIndex((p) => p.platform === name);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= state.tree.length) return;
+  [state.tree[i], state.tree[j]] = [state.tree[j], state.tree[i]];
+  renderBoard();
+  savePlatformOrder();
 }
 
 /* ---------------------------------------------------------- 表单：平台重命名 */
@@ -1723,6 +1767,9 @@ function bind() {
       if (act === "rename-platform") {
         openRenamePlatform(actBtn.dataset.platform);
       }
+      if (act === "plat-up" || act === "plat-down") {
+        movePlatform(actBtn.dataset.platform, act === "plat-up" ? -1 : 1);
+      }
       return;
     }
     // 账号头右侧的类别徽章 / 账号内段头：只筛「这一个账号」的资产列表。
@@ -1785,6 +1832,40 @@ function bind() {
     if (!head) return;
     e.preventDefault();
     head.click();
+  });
+
+  // 平台拖拽排序：只有从抓手按下时卡片才变成可拖，否则点卡片 / 选文字都会误触
+  let dragPlat = null;
+  board.addEventListener("mousedown", (e) => {
+    const plat = e.target.closest(".plat");
+    if (plat) plat.draggable = !!e.target.closest("[data-grip]");
+  });
+  board.addEventListener("dragstart", (e) => {
+    const plat = e.target.closest(".plat");
+    if (!plat || !plat.draggable) { e.preventDefault(); return; }
+    dragPlat = plat;
+    plat.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", plat.dataset.platform); } catch (_) {}
+  });
+  board.addEventListener("dragover", (e) => {
+    if (!dragPlat) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const over = e.target.closest(".plat");
+    if (!over || over === dragPlat) return;
+    // 超过目标卡片一半高度就插到它后面，视觉上跟着鼠标走
+    const rect = over.getBoundingClientRect();
+    const after = e.clientY - rect.top > rect.height / 2;
+    over.parentNode.insertBefore(dragPlat, after ? over.nextSibling : over);
+  });
+  board.addEventListener("drop", (e) => { if (dragPlat) e.preventDefault(); });
+  board.addEventListener("dragend", () => {
+    if (!dragPlat) return;
+    dragPlat.classList.remove("dragging");
+    dragPlat.draggable = false;
+    dragPlat = null;
+    savePlatformOrder();
   });
 
   // 平铺视图
