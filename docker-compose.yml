@@ -1,0 +1,21 @@
+services:
+  asset-ledger:
+    build: .
+    image: asset-ledger:latest
+    container_name: asset-ledger
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/data
+    environment:
+      TZ: Asia/Shanghai
+      APP_TITLE: 资产统计
+      # 需要密码保护时取消注释（前后端都会生效）
+      # APP_PASSWORD: "your-password"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/api/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 4s
+      retries: 3
+      start_period: 5s

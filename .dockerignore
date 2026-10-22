@@ -1,0 +1,11 @@
+.venv/
+data/
+shots/
+.edge-tmp/
+__pycache__/
+*.pyc
+.git/
+.github/
+*.md
+seed.py
+tools/

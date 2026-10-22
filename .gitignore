@@ -1,0 +1,13 @@
+.venv/
+data/
+shots/
+.edge-tmp/
+.edge-cdp/
+.edge-probe/
+.workbuddy/
+__pycache__/
+*.pyc
+*.db
+*.db-wal
+*.db-shm
+.DS_Store

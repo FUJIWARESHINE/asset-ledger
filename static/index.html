@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#eef1f7" />
+<title>资产统计 · Cloud Asset Ledger</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+<link rel="mask-icon" href="/static/favicon.svg" color="#0a84ff" />
+<link rel="stylesheet" href="/static/style.css" />
+<script>
+  try {
+    var q = new URLSearchParams(location.search).get('theme');
+    var t = q || localStorage.getItem('al-theme') || 'light';
+    document.documentElement.dataset.theme = (t === 'dark') ? 'dark' : 'light';
+  } catch (e) {}
+</script>
+</head>
+<body>
+
+<!-- 背景光斑 -->
+<div class="aurora" aria-hidden="true">
+  <span class="blob b1"></span>
+  <span class="blob b2"></span>
+  <span class="blob b3"></span>
+  <span class="blob b4"></span>
+  <span class="grain"></span>
+</div>
+
+<!-- 图标库 -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.6 2.6 15.4 0 18-2.6-2.6-2.6-15.4 0-18z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10.5 13.5a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M13.5 10.5a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></symbol>
+  <symbol id="i-tri" viewBox="0 0 24 24"><path d="M12 4.2l8.6 15.2H3.4z"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.2 2.5L4.5 14h6.2l-1 7.5L19.5 10h-6.3l0-7.5z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.8 12.2L21 2"/><path d="M16.5 6.5l3 3"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-repo" viewBox="0 0 24 24"><path d="M6 3.5h11a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6z"/><path d="M6 3.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2"/><path d="M9.5 8h5M9.5 11.5h5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.4" r="3.9"/><path d="M4.8 20.2a7.4 7.4 0 0 1 14.4 0"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19.2c-4.2 1.3-4.2-2.1-5.9-2.6"/><path d="M15 21.4v-3.3c0-1 .1-1.4-.5-2 2.7-.3 5.4-1.4 5.4-5.9a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.2 12.2 0 0 0-6.3 0C6.2 2.5 5.1 2.8 5.1 2.8a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 3.7 9.2c0 4.5 2.7 5.6 5.4 5.9-.5.6-.6 1.2-.5 2v3.3"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.4 18.5a4.4 4.4 0 0 1-.6-8.8 5.7 5.7 0 0 1 11-1.4 4.1 4.1 0 0 1 .6 8.2z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.2a2 2 0 0 1 2-2h3.1l2 2.4h7.9a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.2 16.2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.4M12 19.6V22M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M2 12h2.4M19.6 12H22M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 13.2A9 9 0 1 1 10.8 3a7.2 7.2 0 0 0 10.2 10.2z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></symbol>
+  <symbol id="i-tree" viewBox="0 0 24 24"><rect x="8.5" y="2.8" width="7" height="5" rx="1.6"/><rect x="2.8" y="16.2" width="7" height="5" rx="1.6"/><rect x="14.2" y="16.2" width="7" height="5" rx="1.6"/><path d="M12 7.8v3.4M12 11.2H6.3v5M12 11.2h5.7v5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M14.5 5.5l4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9.5 7V5a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v2M6 7l1 12.2a2 2 0 0 0 2 1.8h6a2 2 0 0 0 2-1.8L18 7"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9.5 9.5"/><path d="M19 14.5V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3.5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+  <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.2v5.2l3.2 2"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="3.2"/><path d="M3 10.5h18"/><circle cx="17" cy="14.8" r="1.1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v11.5"/><path d="M7.2 10.8L12 15.6l4.8-4.8"/><path d="M4.5 20.5h15"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 20.5V9"/><path d="M7.2 13.2L12 8.4l4.8 4.8"/><path d="M4.5 3.5h15"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3.5h6l-.9 5.6 3 3v2H6.9v-2l3-3L9 3.5z"/><path d="M12 14v6.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.5 12.6l5 5L20 6.8"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.4L19.5 10l-5.6 1.6L12 17l-1.9-5.4L4.5 10l5.6-1.6z"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.2l8.4 14.6H3.6z"/><path d="M12 9.6v4"/><circle cx="12" cy="16.6" r="0.9" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.5" fill="currentColor" stroke="none"/></symbol>
+</svg>
+
+<header class="topbar" id="topbar">
+  <div class="brand">
+    <div class="brand-mark"><svg><use href="#i-layers"/></svg></div>
+    <div class="brand-text">
+      <h1 id="appTitle">资产统计</h1>
+      <p>CLOUD ASSET LEDGER</p>
+    </div>
+  </div>
+
+  <div class="topbar-actions">
+    <label class="search" for="searchInput">
+      <svg class="s-icon"><use href="#i-search"/></svg>
+      <input id="searchInput" type="search" placeholder="搜域名看归属，或搜平台 / 账号" autocomplete="off" />
+      <kbd>/</kbd>
+    </label>
+
+    <button class="icon-btn" id="themeBtn" aria-label="切换主题" title="切换主题">
+      <svg class="ico-sun"><use href="#i-sun"/></svg>
+      <svg class="ico-moon"><use href="#i-moon"/></svg>
+    </button>
+
+    <div class="menu-wrap">
+      <button class="icon-btn" id="moreBtn" aria-label="更多" title="更多">
+        <svg><use href="#i-more"/></svg>
+      </button>
+      <div class="menu glass" id="moreMenu" hidden>
+        <button data-act="export"><svg><use href="#i-download"/></svg>导出 JSON 备份</button>
+        <button data-act="import"><svg><use href="#i-upload"/></svg>导入 JSON</button>
+        <button data-act="backup"><svg><use href="#i-clock"/></svg>定时备份</button>
+      </div>
+    </div>
+
+    <button class="icon-btn" id="addAccountBtn" title="新增账号" aria-label="新增账号">
+      <svg><use href="#i-user"/></svg>
+    </button>
+
+    <button class="primary-btn" id="addBtn">
+      <svg><use href="#i-plus"/></svg><span>新增资产</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <section class="stats-grid" id="statsGrid">
+    <article class="stat glass" data-key="platforms">
+      <div class="stat-top"><span class="stat-label">平台</span><span class="stat-ico"><svg><use href="#i-cloud"/></svg></span></div>
+      <strong class="stat-value" data-num="0">0</strong>
+      <span class="stat-foot" data-foot="platforms">全部分组</span>
+    </article>
+    <article class="stat glass" data-key="accounts">
+      <div class="stat-top"><span class="stat-label">账号</span><span class="stat-ico green"><svg><use href="#i-user"/></svg></span></div>
+      <strong class="stat-value" data-num="0">0</strong>
+      <span class="stat-foot" data-foot="accounts">平均资产数</span>
+    </article>
+    <article class="stat glass" data-key="total">
+      <div class="stat-top"><span class="stat-label">资产总数</span><span class="stat-ico"><svg><use href="#i-layers"/></svg></span></div>
+      <strong class="stat-value" data-num="0">0</strong>
+      <span class="stat-foot" data-foot="total">覆盖全部平台</span>
+    </article>
+    <article class="stat glass" data-key="cost">
+      <div class="stat-top"><span class="stat-label">年化成本</span><span class="stat-ico amber"><svg><use href="#i-wallet"/></svg></span></div>
+      <strong class="stat-value" data-num="0" data-money="1">0</strong>
+      <span class="stat-foot" data-foot="cost">月均 ——</span>
+    </article>
+  </section>
+
+  <div class="filterbar">
+    <div class="chips" id="categoryChips"></div>
+    <div class="chips chips-sub" id="platformChips"></div>
+    <div class="chips chips-sub" id="providerChips" hidden></div>
+  </div>
+
+  <div class="alert-bar" id="alertBar" hidden>
+    <span class="alert-ico"><svg><use href="#i-alert"/></svg></span>
+    <span id="alertText"></span>
+    <button class="link-btn" id="alertAction">只看这些</button>
+  </div>
+
+  <div class="prov-strip glass" id="provStrip" hidden></div>
+
+  <div class="workspace">
+    <section class="board">
+      <div class="board-head">
+        <div class="board-title">
+          <h2 id="boardTitle">按平台分组</h2>
+          <span class="pill-count" id="boardCount">0</span>
+          <button class="cat-filter-pill" id="catFilterPill" hidden></button>
+        </div>
+        <div class="board-actions">
+          <div class="select-wrap">
+            <select id="sortSelect" aria-label="排序方式">
+              <option value="smart">智能排序</option>
+              <option value="expiry">按到期日</option>
+              <option value="name">按名称</option>
+              <option value="cost">按费用</option>
+            </select>
+            <svg><use href="#i-chev"/></svg>
+          </div>
+          <div class="segmented" id="viewToggle">
+            <button data-view="group" class="active" aria-label="分组视图" title="按平台 / 账号分组"><svg><use href="#i-tree"/></svg></button>
+            <button data-view="grid" aria-label="卡片视图" title="卡片平铺"><svg><use href="#i-grid"/></svg></button>
+            <button data-view="list" aria-label="列表视图" title="紧凑列表"><svg><use href="#i-list"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <div id="groupBoard"></div>
+      <div class="asset-grid" id="assetGrid" hidden></div>
+
+      <div class="empty" id="emptyState" hidden>
+        <div class="empty-orb"><svg><use href="#i-layers"/></svg></div>
+        <h3>还没有资产</h3>
+        <p>先建平台账号，再把域名、仓库、Workers、Pages 挂到对应账号下，一个面板看清全部。</p>
+        <div class="empty-actions">
+          <button class="ghost-btn" id="emptyAccountBtn">先建账号</button>
+          <button class="primary-btn" id="emptyAddBtn"><svg><use href="#i-plus"/></svg><span>添加资产</span></button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="rail">
+      <section class="panel glass">
+        <div class="panel-head">
+          <h3>账号分布</h3>
+          <button class="mini-btn" id="railAddAccount"><svg><use href="#i-plus"/></svg>账号</button>
+        </div>
+        <div class="platform-bars" id="platformBars"></div>
+        <div class="platform-foot" id="platformFoot"></div>
+      </section>
+
+      <section class="panel glass">
+        <div class="panel-head">
+          <h3>续费时间线</h3>
+          <span class="panel-tag" id="timelineTag">未来 90 天</span>
+        </div>
+        <div class="timeline" id="timeline"></div>
+      </section>
+    </aside>
+  </div>
+
+  <footer class="page-foot">
+    <span>数据保存在本机 SQLite · <code id="dbHint">data/assets.db</code></span>
+    <span id="footStats"></span>
+  </footer>
+</main>
+
+<!-- 资产弹层 -->
+<div class="sheet-layer" id="sheetLayer" hidden>
+  <div class="sheet-backdrop" id="sheetBackdrop"></div>
+  <div class="sheet glass" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" id="sheet">
+    <div class="sheet-grabber"></div>
+    <header class="sheet-head">
+      <div>
+        <h2 id="sheetTitle">新增资产</h2>
+        <p id="sheetSub">记录这条资产的归属与到期信息</p>
+      </div>
+      <button class="icon-btn ghost" id="sheetClose" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+    </header>
+
+    <form id="assetForm" class="sheet-body" novalidate>
+      <input type="hidden" id="f-id" />
+
+      <div class="field span2">
+        <label for="f-account">归属账号 <em>*</em></label>
+        <div class="account-pick">
+          <div class="select-wrap full">
+            <select id="f-account"></select>
+            <svg><use href="#i-chev"/></svg>
+          </div>
+          <button type="button" class="mini-btn" id="quickAccount">新建</button>
+        </div>
+        <p class="hint" id="accountHint">资产必须有归属账号，平台会自动跟着账号走</p>
+      </div>
+
+      <div class="field span2">
+        <label for="f-name">名称 <em>*</em></label>
+        <input id="f-name" name="name" required maxlength="160" placeholder="例如：demo-web 仓库 / example.com" />
+      </div>
+
+      <div class="field span2">
+        <label>类型</label>
+        <div class="cat-picker" id="catPicker"></div>
+      </div>
+
+      <div class="field span2">
+        <label for="f-url">访问链接</label>
+        <input id="f-url" name="url" inputmode="url" placeholder="https://github.com/FUJIWARESHINE/xxx" />
+      </div>
+
+      <div class="field">
+        <label for="f-expires">到期日</label>
+        <input id="f-expires" name="expires_at" type="date" />
+      </div>
+
+      <div class="field">
+        <label for="f-cycle">续费周期</label>
+        <div class="select-wrap full">
+          <select id="f-cycle" name="cycle">
+            <option value="none">不计费</option>
+            <option value="monthly">按月</option>
+            <option value="yearly">按年</option>
+            <option value="once">一次性买断</option>
+          </select>
+          <svg><use href="#i-chev"/></svg>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="f-cost">费用</label>
+        <div class="cost-row">
+          <input id="f-cost" name="cost" type="number" min="0" step="0.01" placeholder="0.00" />
+          <div class="select-wrap mini">
+            <select id="f-currency" name="currency">
+              <option value="CNY">¥ CNY</option>
+              <option value="USD">$ USD</option>
+              <option value="EUR">€ EUR</option>
+              <option value="HKD">HK$</option>
+            </select>
+            <svg><use href="#i-chev"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="f-env">环境</label>
+        <div class="select-wrap full">
+          <select id="f-env" name="environment">
+            <option value="prod">生产</option>
+            <option value="staging">预发</option>
+            <option value="dev">开发</option>
+            <option value="none">未标注</option>
+          </select>
+          <svg><use href="#i-chev"/></svg>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="f-status">状态</label>
+        <div class="select-wrap full">
+          <select id="f-status" name="status">
+            <option value="active">运行中</option>
+            <option value="paused">已暂停</option>
+            <option value="archived">已归档</option>
+          </select>
+          <svg><use href="#i-chev"/></svg>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="toggle-line" for="f-renew">
+          <span>自动续费</span>
+          <span class="switch"><input id="f-renew" name="auto_renew" type="checkbox" /><i></i></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="f-provider">申请商</label>
+        <input id="f-provider" name="provider" list="providerList" placeholder="如：dpdns / dnshe" />
+        <datalist id="providerList"></datalist>
+      </div>
+
+      <div class="field">
+        <label for="f-provider-acc">申请账号</label>
+        <input id="f-provider-acc" name="provider_account" placeholder="申请商平台上的账号" />
+      </div>
+
+      <div class="field span2">
+        <label for="f-cred">密码存放位置</label>
+        <input id="f-cred" name="credential_hint" placeholder="只记 Vaultwarden 里的条目名，不存密码本身。如：Vaultwarden › Cloudflare 主账号" />
+      </div>
+
+      <div class="field span2">
+        <label for="f-tags">标签</label>
+        <input id="f-tags" name="tags" placeholder="逗号分隔，如：主力, 备案, 生产环境" />
+        <div class="tag-suggest" id="tagSuggest"></div>
+      </div>
+
+      <div class="field span2">
+        <label for="f-notes">备注</label>
+        <textarea id="f-notes" name="notes" rows="3" placeholder="绑定了哪些服务、迁移注意事项…"></textarea>
+      </div>
+
+      <label class="pin-line">
+        <span class="switch small"><input id="f-pinned" name="pinned" type="checkbox" /><i></i></span>
+        <span>置顶这条资产</span>
+      </label>
+    </form>
+
+    <footer class="sheet-foot">
+      <button class="danger-btn" id="deleteBtn" type="button" hidden><svg><use href="#i-trash"/></svg>删除</button>
+      <button class="ghost-btn" id="openBtn" type="button" hidden><svg><use href="#i-external"/></svg><span>打开链接</span></button>
+      <div class="spacer"></div>
+      <button class="ghost-btn" id="cancelBtn" type="button">取消</button>
+      <button class="primary-btn" id="saveBtn" type="button"><svg><use href="#i-check"/></svg><span>保存</span></button>
+    </footer>
+  </div>
+</div>
+
+<!-- 账号弹层 -->
+<div class="sheet-layer" id="accLayer" hidden>
+  <div class="sheet-backdrop" data-close="acc"></div>
+  <div class="sheet glass sheet-sm" role="dialog" aria-modal="true" aria-labelledby="accTitle">
+    <div class="sheet-grabber"></div>
+    <header class="sheet-head">
+      <div>
+        <h2 id="accTitle">新增账号</h2>
+        <p id="accSub">一个平台下可以有任意多个账号</p>
+      </div>
+      <button class="icon-btn ghost" id="accClose" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+    </header>
+
+    <form class="sheet-body acc-form" id="accForm" novalidate>
+      <div class="field">
+        <label for="a-platform">平台 <em>*</em></label>
+        <input id="a-platform" list="platformList" placeholder="GitHub / Cloudflare / Vercel" />
+        <datalist id="platformList"></datalist>
+      </div>
+
+      <div class="field">
+        <label for="a-name">账号标识 <em>*</em></label>
+        <input id="a-name" placeholder="用户名或注册邮箱" />
+      </div>
+
+      <div class="field span2">
+        <label for="a-label">备注名</label>
+        <input id="a-label" placeholder="如：主力号 / 小号 2 / 公司号" />
+      </div>
+
+      <div class="field span2">
+        <label for="a-url">控制台链接</label>
+        <input id="a-url" inputmode="url" placeholder="https://github.com/settings/profile" />
+      </div>
+
+      <div class="field">
+        <label for="a-status">状态</label>
+        <div class="select-wrap full">
+          <select id="a-status">
+            <option value="active">使用中</option>
+            <option value="paused">已停用</option>
+            <option value="archived">已归档</option>
+          </select>
+          <svg><use href="#i-chev"/></svg>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="a-cred">密码存放位置</label>
+        <input id="a-cred" placeholder="Vaultwarden › GitHub 主力号" />
+      </div>
+
+      <div class="field span2">
+        <label for="a-notes">备注</label>
+        <textarea id="a-notes" rows="3" placeholder="这个账号主要放什么、2FA 在哪…"></textarea>
+      </div>
+    </form>
+
+    <footer class="sheet-foot">
+      <button class="danger-btn" id="accDelete" type="button" hidden><svg><use href="#i-trash"/></svg>删除</button>
+      <div class="spacer"></div>
+      <button class="ghost-btn" id="accCancel" type="button">取消</button>
+      <button class="primary-btn" id="accSave" type="button"><svg><use href="#i-check"/></svg><span>保存</span></button>
+    </footer>
+  </div>
+</div>
+
+<!-- 定时备份弹层 -->
+<div class="sheet-layer" id="backupLayer" hidden>
+  <div class="sheet-backdrop" data-close="backup"></div>
+  <div class="sheet glass sheet-sm" role="dialog" aria-modal="true" aria-labelledby="bkTitle">
+    <div class="sheet-grabber"></div>
+    <header class="sheet-head">
+      <div>
+        <h2 id="bkTitle">定时备份</h2>
+        <p id="bkSub">数据库快照，超过保留份数自动删最早的</p>
+      </div>
+      <button class="icon-btn ghost" id="bkClose" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+    </header>
+
+    <div class="sheet-body bk-body">
+      <label class="toggle-line" for="bkEnabled">
+        <span>启用定时备份</span>
+        <span class="switch"><input id="bkEnabled" type="checkbox" /><i></i></span>
+      </label>
+
+      <div class="field">
+        <label for="bkInterval">备份频率</label>
+        <div class="select-wrap full">
+          <select id="bkInterval">
+            <option value="6">每 6 小时</option>
+            <option value="12">每 12 小时</option>
+            <option value="24">每天</option>
+            <option value="72">每 3 天</option>
+            <option value="168">每周</option>
+          </select>
+          <svg><use href="#i-chev"/></svg>
+        </div>
+      </div>
+      <div class="field">
+        <label for="bkKeep">保留份数</label>
+        <input id="bkKeep" type="number" min="1" max="50" step="1" />
+      </div>
+      <p class="hint">超过保留份数后，自动删除时间最早的备份，避免一直堆文件。</p>
+
+      <div class="bk-status" id="bkStatus"></div>
+
+      <div class="bk-list-head">
+        <span>现有备份</span>
+        <span class="bk-dir" id="bkDir"></span>
+      </div>
+      <div class="bk-list" id="bkList"></div>
+    </div>
+
+    <footer class="sheet-foot">
+      <button class="ghost-btn" id="bkRun" type="button"><svg><use href="#i-download"/></svg>立即备份</button>
+      <div class="spacer"></div>
+      <button class="ghost-btn" id="bkCancel" type="button">取消</button>
+      <button class="primary-btn" id="bkSave" type="button"><svg><use href="#i-check"/></svg><span>保存</span></button>
+    </footer>
+  </div>
+</div>
+
+<!-- 确认弹层 -->
+<div class="confirm-layer" id="confirmLayer" hidden>
+  <div class="confirm-backdrop"></div>
+  <div class="confirm glass" role="alertdialog">
+    <h3 id="confirmTitle">确认删除？</h3>
+    <p id="confirmText">删除后无法恢复。</p>
+    <div class="confirm-actions">
+      <button class="ghost-btn" id="confirmCancel">取消</button>
+      <button class="danger-btn solid" id="confirmOk">删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- 密码层 -->
+<div class="lock-layer" id="lockLayer" hidden>
+  <div class="lock-card glass">
+    <div class="lock-ico"><svg><use href="#i-key"/></svg></div>
+    <h2>需要访问密码</h2>
+    <p>这台实例启用了密码保护</p>
+    <input type="password" id="lockInput" placeholder="输入密码" autocomplete="current-password" />
+    <button class="primary-btn" id="lockBtn">解锁</button>
+    <p class="lock-err" id="lockErr"></p>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<input type="file" id="importFile" accept="application/json,.json" hidden />
+
+<script src="/static/app.js"></script>
+</body>
+</html>
