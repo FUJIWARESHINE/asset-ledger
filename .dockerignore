@@ -1,4 +1,7 @@
 .venv/
+.venv-test/
+.ext-test/
+extension/
 data/
 shots/
 .edge-tmp/

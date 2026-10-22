@@ -125,6 +125,18 @@ cp data/assets.db data/backups/manual-$(date +%F).db
 python seed.py --replace --base http://127.0.0.1:8787
 ```
 
+## 浏览器扩展（快速录入）
+
+在平台上浏览时随手把资产填进浏览器弹窗，攒成一批后一次提交到台账，
+不用来回切标签页开新增弹窗。Edge / Chrome 通用（MV3）。
+
+- **纯手动**：不抓页面、不读 DOM、不接平台 API，不在平台上产生任何额外请求
+- **不改后端**：走已发布的 `POST /api/assets`，老版本台账也能直接连
+- **有队列和去重**：填完先进本地队列，确认后批量导入；account + 名称重复的自动跳过
+
+装法：`edge://extensions` → 开发人员模式 → 加载解压缩的扩展 → 选 `extension/` 目录。
+详见 [`extension/README.md`](extension/README.md)。
+
 ## 技术栈
 
 - 后端：FastAPI + SQLite（标准库 `sqlite3`，无 ORM）
@@ -138,8 +150,10 @@ app/main.py           # 全部后端：模型、层级聚合、CRUD、导入导�
 static/index.html     # 页面骨架 + SVG 图标库
 static/style.css      # 液态玻璃设计系统（明暗主题）
 static/app.js         # 状态、渲染、交互
+extension/            # 浏览器扩展「快速录入」，纯客户端，不依赖后端改动
 seed.py               # 命令行灌示例数据
 tools/import_excel.py # Excel 转导入 JSON 的小工具
+tools/make_icons.py   # 生成扩展图标（纯标准库，不依赖 Pillow）
 ```
 
 ## API

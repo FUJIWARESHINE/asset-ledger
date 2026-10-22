@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>资产台账 · 快速录入</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 15.1 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.05A1.7 1.7 0 0 0 21 10.1h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1.03Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7L11.8 5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12.2 19"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M4 13 6.5 5h11L20 13v6H4z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.5"/><path d="M12 3.5 21.5 20.5H2.5z"/></symbol>
+</svg>
+
+<div class="wrap">
+
+  <header class="head">
+    <div class="brand">
+      <span class="dot" id="connDot" title="连接状态"></span>
+      <span class="brand-t">快速录入</span>
+      <span class="conn" id="connHint">未连接</span>
+    </div>
+    <div class="head-r">
+      <button class="chip" id="queueChip" title="展开待导入队列" hidden>
+        <svg class="ic"><use href="#i-inbox"/></svg><b id="queueN">0</b>
+      </button>
+      <button class="icon-btn" id="btnGear" title="设置"></button>
+    </div>
+  </header>
+
+  <!-- 首次使用 / 改地址 -->
+  <section class="setup" id="setup" hidden>
+    <label class="fld">
+      <span>台账地址</span>
+      <input id="cfgUrl" type="text" placeholder="http://192.168.1.100:8787" autocomplete="off" spellcheck="false">
+    </label>
+    <label class="fld">
+      <span>访问密码 <i>没设 APP_PASSWORD 就留空</i></span>
+      <input id="cfgPwd" type="password" placeholder="可选" autocomplete="off">
+    </label>
+    <div class="row-2">
+      <button class="btn primary" id="btnSaveCfg">保存并连接</button>
+      <button class="btn ghost" id="btnCancelCfg" hidden>取消</button>
+    </div>
+    <p class="tip" id="cfgMsg"></p>
+    <button class="btn ghost sm" id="btnOpenOptions" hidden>这个地址没在授权范围内 → 打开设置页授权</button>
+  </section>
+
+  <main id="main" hidden>
+
+    <div class="grid">
+      <label class="fld span2">
+        <span>归属账号 <b class="req">*</b></span>
+        <div class="with-btn">
+          <select id="fAccount"></select>
+          <button class="icon-btn sm" id="btnNewAcc" title="新建账号">
+            <svg class="ic"><use href="#i-plus"/></svg>
+          </button>
+        </div>
+      </label>
+
+      <div class="newacc" id="newAcc" hidden>
+        <input id="naPlatform" list="dlPlatform" placeholder="平台，如 Cloudflare" autocomplete="off">
+        <input id="naName" placeholder="账号标识，如 main" autocomplete="off">
+        <button class="btn sm primary" id="btnCreateAcc">建立</button>
+        <button class="btn sm ghost" id="btnCancelAcc">取消</button>
+        <p class="tip span2" id="newAccMsg"></p>
+      </div>
+
+      <label class="fld span2">
+        <span>资产名称 <b class="req">*</b></span>
+        <div class="with-btn">
+          <input id="fName" type="text" placeholder="如 example.com" autocomplete="off" spellcheck="false">
+          <button class="icon-btn sm" id="btnGrabUrl" title="取当前标签页地址（只读地址栏，不读页面内容）">
+            <svg class="ic"><use href="#i-link"/></svg>
+          </button>
+        </div>
+      </label>
+
+      <label class="fld span2">
+        <span>链接</span>
+        <input id="fUrl" type="text" placeholder="https://（可选）" autocomplete="off" spellcheck="false">
+      </label>
+
+      <label class="fld">
+        <span>类别</span>
+        <select id="fCategory">
+          <option value="domain">域名</option>
+          <option value="subdomain">二级域名</option>
+          <option value="repo">仓库 / 项目</option>
+          <option value="vercel">Vercel 项目</option>
+          <option value="worker">Workers</option>
+          <option value="pages">Pages</option>
+          <option value="server">服务器 / VPS</option>
+          <option value="storage">存储 / 图床</option>
+          <option value="account">账号 / 订阅</option>
+          <option value="other" selected>其他</option>
+        </select>
+      </label>
+
+      <label class="fld">
+        <span>到期日</span>
+        <input id="fExpires" type="date">
+      </label>
+
+      <div class="quick span2">
+        <button class="tag" data-exp="+1y">+1 年</button>
+        <button class="tag" data-exp="+1m">+1 月</button>
+        <button class="tag" data-exp="+30d">+30 天</button>
+        <button class="tag" data-exp="clear">清空</button>
+        <label class="mini-check"><input type="checkbox" id="fRenew"> 自动续费</label>
+      </div>
+
+      <details class="more span2" id="moreBox">
+        <summary>更多字段 <i>费用 / 申请商 / 标签 / 备注</i></summary>
+        <div class="grid inner">
+          <label class="fld">
+            <span>费用</span>
+            <input id="fCost" type="number" step="0.01" min="0" placeholder="0">
+          </label>
+          <label class="fld">
+            <span>周期</span>
+            <select id="fCycle">
+              <option value="none" selected>不计费</option>
+              <option value="monthly">按月</option>
+              <option value="yearly">按年</option>
+              <option value="once">一次性</option>
+            </select>
+          </label>
+          <label class="fld">
+            <span>币种</span>
+            <select id="fCurrency">
+              <option value="CNY" selected>CNY</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="HKD">HKD</option>
+              <option value="JPY">JPY</option>
+            </select>
+          </label>
+          <label class="fld">
+            <span>状态</span>
+            <select id="fStatus">
+              <option value="active" selected>运行中</option>
+              <option value="paused">已暂停</option>
+              <option value="archived">已归档</option>
+            </select>
+          </label>
+          <label class="fld">
+            <span>环境</span>
+            <select id="fEnv">
+              <option value="prod" selected>生产</option>
+              <option value="staging">预发</option>
+              <option value="dev">开发</option>
+              <option value="none">未标注</option>
+            </select>
+          </label>
+          <label class="fld">
+            <span>密码位置</span>
+            <input id="fCred" type="text" placeholder="Vaultwarden › 条目名" autocomplete="off">
+          </label>
+          <label class="fld">
+            <span>申请商</span>
+            <input id="fProvider" type="text" placeholder="dpdns / dnshe / eu.org" autocomplete="off">
+          </label>
+          <label class="fld">
+            <span>申请账号</span>
+            <input id="fProviderAcc" type="text" placeholder="申请商侧账号" autocomplete="off">
+          </label>
+          <label class="fld span2">
+            <span>标签 <i>逗号分隔</i></span>
+            <input id="fTags" type="text" placeholder="免费, 备案中" autocomplete="off">
+          </label>
+          <label class="fld span2">
+            <span>备注</span>
+            <textarea id="fNotes" rows="2" placeholder="可选"></textarea>
+          </label>
+        </div>
+      </details>
+    </div>
+
+    <div class="submit-row">
+      <button class="btn primary big" id="btnAdd">
+        <svg class="ic"><use href="#i-plus"/></svg> 加入待导入
+      </button>
+    </div>
+    <p class="tip" id="formMsg"></p>
+
+    <!-- 队列 -->
+    <section class="queue" id="queueBox" hidden>
+      <div id="queueItems">
+        <div class="queue-head">
+          <span>待导入 <b id="queueCount">0</b> 条</span>
+          <button class="tag danger" id="btnClearQueue">清空</button>
+        </div>
+        <ul class="qlist" id="qlist"></ul>
+        <label class="mini-check skip">
+          <input type="checkbox" id="optDupSkip" checked>
+          跳过台账里已存在的同名资产
+        </label>
+        <button class="btn go big" id="btnImport">全部导入台账</button>
+      </div>
+      <ul class="results" id="results" hidden></ul>
+    </section>
+
+  </main>
+
+  <datalist id="dlPlatform"></datalist>
+</div>
+
+<script src="common.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "资产台账 · 快速录入",
+  "version": "1.0.0",
+  "description": "把手动填写的云资产一键提交到自建资产台账。不读取页面内容、不抓取 DOM、不自动同步平台。",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://192.168.*/*",
+    "http://10.*/*"
+  ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "action": {
+    "default_title": "资产台账 · 快速录入",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

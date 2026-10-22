@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>资产台账 · 设置</title>
+<link rel="stylesheet" href="popup.css">
+<style>
+  body { width: auto; max-width: 580px; margin: 0 auto; padding: 26px 0 40px; }
+  .card {
+    margin: 0 16px; padding: 18px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: var(--shadow);
+  }
+  .card + .card { margin-top: 14px; }
+  h1 { margin: 0 0 4px; font-size: 17px; letter-spacing: .2px; }
+  h2 { margin: 0 0 10px; font-size: 12.5px; color: var(--text-2); letter-spacing: .3px; }
+  .sub { margin: 0 0 16px; font-size: 12px; color: var(--text-3); }
+  .lbl { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-2); margin: 0 0 5px; }
+  .lbl i { font-style: normal; font-weight: 400; color: var(--text-3); }
+  .fld2 { margin-bottom: 12px; }
+  .actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .perm {
+    display: flex; align-items: center; gap: 7px;
+    margin-top: 12px; padding: 9px 11px; border-radius: 11px;
+    background: var(--card-2); border: 1px solid var(--hair);
+    font-size: 11.5px; color: var(--text-2);
+  }
+  .perm .ic { width: 14px; height: 14px; }
+  .perm.ok { color: var(--green); }
+  .perm.no { color: var(--amber); }
+  ul.notes { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-2); line-height: 1.65; }
+  ul.notes li::marker { color: var(--accent); }
+  code {
+    padding: 1px 5px; border-radius: 5px; font-size: 11.5px;
+    background: var(--hair); font-family: Consolas, "Cascadia Mono", monospace;
+  }
+</style>
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.5"/><path d="M12 3.5 21.5 20.5H2.5z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 20 6v6c0 4.5-3.2 7.6-8 9-4.8-1.4-8-4.5-8-9V6z"/></symbol>
+</svg>
+
+<div class="card">
+  <h1>资产台账 · 快速录入</h1>
+  <p class="sub">填一次台账地址，之后点扩展图标就能边看平台边录入，批量提交。</p>
+
+  <div class="fld2">
+    <label class="lbl" for="cfgUrl">台账地址</label>
+    <input id="cfgUrl" type="text" placeholder="http://192.168.1.100:8787" autocomplete="off" spellcheck="false">
+  </div>
+
+  <div class="fld2">
+    <label class="lbl" for="cfgPwd">访问密码 <i>— 没设 APP_PASSWORD 就留空</i></label>
+    <input id="cfgPwd" type="password" placeholder="可选" autocomplete="off">
+  </div>
+
+  <div class="actions">
+    <button class="btn primary" id="btnSave">授权并保存</button>
+    <button class="btn ghost" id="btnTest">测试连接</button>
+  </div>
+
+  <p class="tip" id="msg"></p>
+
+  <div class="perm" id="permRow">
+    <svg class="ic"><use href="#i-shield"/></svg>
+    <span id="permText">正在检查授权…</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>这个扩展做什么、不做什么</h2>
+  <ul class="notes">
+    <li><b>不做</b>页面抓取：不注入内容脚本、不读 DOM、不在平台上发任何请求。你在平台上浏览时它完全沉默。</li>
+    <li><b>不做</b>平台 API 同步：不存 token、不代你登录，台账里也没有能进账号的凭据。</li>
+    <li>唯一的浏览器读取动作是「取当前页地址」按钮 —— 只读地址栏里的 URL，和你自己复制一样。</li>
+    <li>所有已填内容先存在扩展本地队列里，点「全部导入」才真正 POST 到你的台账。</li>
+    <li>只申请 <code>storage</code>（存队列与配置）和 <code>activeTab</code>（点按钮时读一次地址）两项权限。</li>
+  </ul>
+</div>
+
+<script src="common.js"></script>
+<script src="options.js"></script>
+</body>
+</html>
