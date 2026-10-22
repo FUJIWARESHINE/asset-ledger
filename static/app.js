@@ -581,11 +581,10 @@ function assetTile(a) {
   return `<button class="ac ${bad ? "is-expired" : soon ? "is-soon" : ""}" data-asset="${a.id}"
       title="${esc(tip)}"
       style="--c:${col};--c-soft:${hexToRgba(col, 0.12)};--c-line:${hexToRgba(col, 0.2)}">
-      <span class="ac-ico">${icon(c.icon)}</span>
-      <span class="ac-name">${a.pinned ? `<svg class="pin"><use href="#i-pin"/></svg>` : ""}${esc(a.name)}</span>
-      ${a.provider
+      <span class="ac-ico">${icon(c.icon)}${a.provider
         ? `<i class="ac-prov-dot" style="--pc:${providerColor(a.provider)}" title="${esc(`申请商：${a.provider}${a.provider_account ? "（" + a.provider_account + "）" : ""}`)}"></i>`
-        : ""}
+        : ""}</span>
+      <span class="ac-name">${a.pinned ? `<svg class="pin"><use href="#i-pin"/></svg>` : ""}${esc(a.name)}</span>
       ${a.days_left !== null && a.days_left !== undefined
         ? `<span class="ac-day ${a.expiry_state}">${esc(expiryShort(a))}</span>` : ""}
       ${go ? `<span class="ac-go" data-go="${a.id}" title="打开 ${esc(hostOf(go))}"><svg><use href="#i-external"/></svg></span>` : ""}

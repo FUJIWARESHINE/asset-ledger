@@ -1514,7 +1514,7 @@ html[data-theme="dark"] .field input[type="date"]::-webkit-calendar-picker-indic
   border-color: color-mix(in srgb, var(--c) 42%, transparent);
 }
 .ac:active { transform: scale(0.975); }
-.ac-ico { display: grid; place-items: center; color: var(--c); flex: none; }
+.ac-ico { position: relative; display: grid; place-items: center; color: var(--c); flex: none; }
 .ac-ico svg { width: 14px; height: 14px; stroke-width: 1.9; }
 .ac-name {
   flex: 1; min-width: 0;
@@ -2133,9 +2133,10 @@ html[data-theme="dark"] .ac-day.soon { color: #ffc759; }
    所以磁贴里只用一颗品牌色圆点表示申请商，全名走 title 悬浮提示；
    卡片视图（.asset-prov）与详情弹层里仍然是完整文字。 */
 .ac-prov-dot {
-  flex: none;
+  position: absolute;
+  right: -3px; bottom: -3px;
   width: 7px; height: 7px;
   border-radius: 50%;
   background: var(--pc, var(--text-3));
-  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--text-3) 22%, transparent);
+  box-shadow: 0 0 0 1.5px var(--c-soft, var(--bg));
 }
