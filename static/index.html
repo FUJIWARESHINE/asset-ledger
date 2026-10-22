@@ -450,17 +450,70 @@
     </header>
 
     <form class="sheet-body" id="platForm" novalidate>
-      <div class="field">
+      <div class="field span2">
+        <label>平台属性</label>
+        <div class="kind-pick" id="platKind">
+          <button type="button" class="kind-opt" data-kind="registrar">
+            <b>域名申请商</b>
+            <span>域名在这家注册/申请，改名时资产的申请商会一起改</span>
+          </button>
+          <button type="button" class="kind-opt" data-kind="service">
+            <b>服务</b>
+            <span>托管、代码、部署这类服务，改名只换平台名，不碰申请商</span>
+          </button>
+        </div>
+      </div>
+      <div class="field span2">
         <label for="p-name">平台名称 <em>*</em></label>
         <input id="p-name" maxlength="80" list="platformList" placeholder="例如：Cloudflare" />
         <p class="hint" id="platHint"></p>
       </div>
+      <label class="pin-line" id="platSyncLine" hidden>
+        <span class="switch small"><input id="platSyncProv" type="checkbox" checked /><i></i></span>
+        <span id="platSyncText">同时更新资产的申请商名称</span>
+      </label>
     </form>
 
     <footer class="sheet-foot">
       <div class="spacer"></div>
       <button class="ghost-btn" id="platCancel" type="button">取消</button>
       <button class="primary-btn" id="platSave" type="button"><svg><use href="#i-check"/></svg><span>保存</span></button>
+    </footer>
+  </div>
+</div>
+
+<!-- 申请商重命名弹层 -->
+<div class="sheet-layer" id="provLayer" hidden>
+  <div class="sheet-backdrop" data-close="prov"></div>
+  <div class="sheet glass sheet-sm sheet-xs" role="dialog" aria-modal="true" aria-labelledby="provTitle">
+    <div class="sheet-grabber"></div>
+    <header class="sheet-head">
+      <div>
+        <h2 id="provTitle">重命名申请商</h2>
+        <p id="provSub">申请商是域名上「哪家给的」标记，只改这个标记，不动账号与托管</p>
+      </div>
+      <button class="icon-btn ghost" id="provClose" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+    </header>
+
+    <form class="sheet-body" id="provForm" novalidate>
+      <div class="field span2">
+        <label for="pv-from">申请商</label>
+        <div class="select-wrap full">
+          <select id="pv-from"></select>
+          <svg><use href="#i-chev"/></svg>
+        </div>
+      </div>
+      <div class="field span2">
+        <label for="pv-to">新名字 <em>*</em></label>
+        <input id="pv-to" maxlength="80" placeholder="例如：Namecheap" />
+        <p class="hint" id="provHint"></p>
+      </div>
+    </form>
+
+    <footer class="sheet-foot">
+      <div class="spacer"></div>
+      <button class="ghost-btn" id="provCancel" type="button">取消</button>
+      <button class="primary-btn" id="provSave" type="button"><svg><use href="#i-check"/></svg><span>保存</span></button>
     </footer>
   </div>
 </div>

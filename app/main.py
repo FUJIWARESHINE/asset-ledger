@@ -305,6 +305,14 @@ class ImportPayload(BaseModel):
 
 class PlatformRenameIn(BaseModel):
     to: str = Field(min_length=1, max_length=80)
+    # registrar = 域名申请商；service = 托管/代码等服务。只有 registrar 改名才动资产的 provider。
+    kind: str | None = None
+    # 平台名与申请商名在台账里经常是同一个词，改名时默认一起同步
+    sync_provider: bool = True
+
+
+class ProviderRenameIn(BaseModel):
+    to: str = Field(min_length=1, max_length=80)
 
 
 # ---------------------------------------------------------------- 聚合
@@ -349,10 +357,64 @@ def sort_assets(items: list[dict]) -> list[dict]:
     )
 
 
+# ---------------------------------------------------------------- 平台属性
+# registrar = 域名申请商（域名注册/申请的那家）：改名要把资产的 provider 一起带走
+# service   = 托管 / 代码 / 部署等服务（Cloudflare / GitHub / Vercel）：改名只动平台名，
+#             **绝不能碰 provider**，否则会把挂在它名下的域名申请商一起改掉
+PLATFORM_KINDS = ("registrar", "service")
+PLATFORM_KIND_LABEL = {"registrar": "域名申请商", "service": "服务"}
+
+
+def platform_kind_map(conn: sqlite3.Connection) -> dict[str, str]:
+    """平台属性存在 settings.platform_kinds（平台不建表，属性只是它的附属标签）。"""
+    row = conn.execute("SELECT value FROM settings WHERE key = 'platform_kinds'").fetchone()
+    if row is None:
+        return {}
+    try:
+        raw = json.loads(row["value"])
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): str(v) for k, v in raw.items() if v in PLATFORM_KINDS}
+
+
+def put_platform_kind(conn: sqlite3.Connection, name: str, kind: str) -> None:
+    data = platform_kind_map(conn)
+    data[name] = kind
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('platform_kinds', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (json.dumps(data, ensure_ascii=False),),
+    )
+
+
+def drop_platform_kind(conn: sqlite3.Connection, name: str) -> None:
+    data = platform_kind_map(conn)
+    if name in data:
+        data.pop(name)
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('platform_kinds', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (json.dumps(data, ensure_ascii=False),),
+        )
+
+
+def guess_platform_kind(platform: str, assets: list[dict], known: dict[str, str]) -> str:
+    """没登记过就猜：平台下资产的申请商正好等于平台名 → 它自己就是申请商，否则按服务算。"""
+    if platform in known:
+        return known[platform]
+    low = (platform or "").strip().lower()
+    if any((a.get("provider") or "").strip().lower() == low for a in assets):
+        return "registrar"
+    return "service"
+
+
 def build_tree() -> list[dict[str, Any]]:
     with db() as conn:
         acc_rows = [dict(r) for r in conn.execute("SELECT * FROM accounts")]
         asset_rows = [row_out(r) for r in conn.execute("SELECT * FROM assets")]
+        kind_map = platform_kind_map(conn)
 
     index: dict[int, dict] = {}
     grouped: dict[str, list[dict]] = {}
@@ -401,6 +463,7 @@ def build_tree() -> list[dict[str, Any]]:
         accounts_out.sort(key=lambda x: (-x["asset_count"], (x["name"] or "").lower()))
         platforms.append({
             "platform": platform,
+            "kind": guess_platform_kind(platform, all_items, kind_map),
             "account_count": len([a for a in accounts_out if a["id"] is not None]),
             **rollup(all_items),
             "accounts": accounts_out,
@@ -578,29 +641,55 @@ def rename_platform(
     payload: PlatformRenameIn,
     password: str | None = Header(default=None, alias="X-App-Password"),
 ) -> dict[str, Any]:
-    """平台重命名。
+    """平台重命名（可顺带设置平台属性）。
 
     平台不是独立的表 —— 它由 accounts.platform 归一后聚合出来，所以改名就是：
     把这批账号的 platform 一次性换成新名字，再把资产上的 platform 投影同步刷一遍。
     目标名字已经有账号时不会报错，等价于两个平台合并（同名账号会并存，需要自己去合并）。
+
+    申请商维度只在「平台属性 = registrar（域名申请商）」时才同步 —— Cloudflare / GitHub
+    这类服务平台改名绝不能碰 provider，否则会把挂在它名下的域名的申请商一起改掉。
     """
     guard(password)
     old = (name or "").strip()
     new = (payload.to or "").strip()
+    kind_in = (payload.kind or "").strip() or None
     if not old or not new:
         raise HTTPException(status_code=400, detail="平台名不能为空")
+    if kind_in and kind_in not in PLATFORM_KINDS:
+        raise HTTPException(status_code=400, detail="平台属性只能是 registrar 或 service")
     if old == "未归类" or new == "未归类":
         raise HTTPException(status_code=400, detail="「未归类」是兜底分组，不能改名或改成它")
-    if old == new:
-        return {"from": old, "to": new, "accounts": 0, "assets": 0, "merged": False}
 
     ts = now_iso()
+    providers = 0
     with db() as conn:
         ids = [r["id"] for r in conn.execute(
             "SELECT id FROM accounts WHERE ifnull(platform,'')=?", (old,)
         ).fetchall()]
         if not ids:
             raise HTTPException(status_code=404, detail="这个平台下没有账号")
+        marks = ",".join("?" * len(ids))
+
+        # 决定平台属性：显式传入 > 已登记 > 按资产里的申请商猜
+        known = platform_kind_map(conn)
+        if kind_in:
+            kind = kind_in
+        elif old in known:
+            kind = known[old]
+        else:
+            prov_names = [r["provider"] for r in conn.execute(
+                f"SELECT DISTINCT ifnull(provider,'') AS provider FROM assets WHERE account_id IN ({marks})",
+                ids,
+            )]
+            kind = "registrar" if any((p or "").strip().lower() == old.lower() for p in prov_names) else "service"
+
+        if old == new:
+            # 只改属性、不改名
+            put_platform_kind(conn, old, kind)
+            return {"from": old, "to": new, "kind": kind, "accounts": 0,
+                    "assets": 0, "providers": 0, "merged": False, "renamed": False}
+
         existed = conn.execute(
             "SELECT count(*) AS n FROM accounts WHERE ifnull(platform,'')=?", (new,)
         ).fetchone()["n"]
@@ -609,7 +698,6 @@ def rename_platform(
             (new, ts, old),
         )
         # 投影字段跟着刷：账号下的资产统一改到新平台名
-        marks = ",".join("?" * len(ids))
         changed = conn.execute(
             f"UPDATE assets SET platform=? WHERE account_id IN ({marks}) AND ifnull(platform,'')<>?",
             [new, *ids, new],
@@ -619,13 +707,56 @@ def rename_platform(
             "UPDATE assets SET platform=? WHERE account_id IS NULL AND ifnull(platform,'')=?",
             (new, old),
         ).rowcount
+        # 申请商维度：**只有域名申请商平台**才同步，服务平台一律不动
+        if kind == "registrar" and payload.sync_provider:
+            providers = conn.execute(
+                "UPDATE assets SET provider=? WHERE lower(ifnull(provider,''))=lower(?)",
+                (new, old),
+            ).rowcount
+        # 平台属性跟着名字搬到新键上，旧键删掉免得以后误判
+        drop_platform_kind(conn, old)
+        put_platform_kind(conn, new, kind)
     return {
         "from": old,
         "to": new,
+        "kind": kind,
         "accounts": len(ids),
         "assets": changed,
+        "providers": providers,
         "merged": bool(existed),
+        "renamed": True,
     }
+
+
+@app.post("/api/providers/{name}/rename")
+def rename_provider(
+    name: str,
+    payload: ProviderRenameIn,
+    password: str | None = Header(default=None, alias="X-App-Password"),
+) -> dict[str, Any]:
+    """申请商改名。
+
+    provider 只是资产上的一个文本字段（哪家给的域名），跟平台 / 账号无关，
+    所以这里只刷 `assets.provider`。平台改名时如果名字相同会自动同步一次，
+    这个接口用于「平台已经改过了、但申请商还留着旧名字」的补救。
+    """
+    guard(password)
+    old = (name or "").strip()
+    new = (payload.to or "").strip()
+    if not old or not new:
+        raise HTTPException(status_code=400, detail="申请商名不能为空")
+    if old.lower() == new.lower():
+        return {"from": old, "to": new, "assets": 0, "merged": False}
+    with db() as conn:
+        existed = conn.execute(
+            "SELECT count(*) AS n FROM assets WHERE lower(ifnull(provider,''))=lower(?)", (new,)
+        ).fetchone()["n"]
+        changed = conn.execute(
+            "UPDATE assets SET provider=? WHERE lower(ifnull(provider,''))=lower(?)", (new, old)
+        ).rowcount
+        if not changed:
+            raise HTTPException(status_code=404, detail="没有资产用这个申请商")
+    return {"from": old, "to": new, "assets": changed, "merged": bool(existed)}
 
 
 @app.delete("/api/accounts/{account_id}")

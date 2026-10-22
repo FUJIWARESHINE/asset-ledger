@@ -4,7 +4,7 @@ shots/
 .edge-tmp/
 .edge-cdp/
 .edge-probe/
-.edge-copy-test/
+.edge-*test/
 .workbuddy/
 __pycache__/
 *.pyc

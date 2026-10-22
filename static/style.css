@@ -488,6 +488,14 @@ main {
 }
 .chip.active .chip-n { color: rgba(255, 255, 255, 0.78); }
 
+/* chips 行末尾的「改名」这类操作按钮：虚线边框，跟筛选项区分开 */
+.chip.chip-ghost {
+  border-style: dashed;
+  color: var(--text-3);
+  background: transparent;
+}
+.chip.chip-ghost:hover { color: var(--accent); border-color: var(--accent); }
+
 /* ---------------------------------------------- 工作区 */
 .workspace {
   display: grid;
@@ -2037,3 +2045,44 @@ html[data-theme="dark"] .ac-day.soon { color: #ffc759; }
 /* 备份列表里的图标按钮不跟账号头那套「悬停才现身」的规则，常驻可见 */
 .bk-actions .mini-icon { opacity: 1; color: var(--text-2); }
 .bk-actions .mini-icon:hover { color: var(--accent); background: var(--hover-tint); }
+
+/* ---------------------------------------------- 平台属性（申请商 / 服务） */
+/* 改名弹层里的两选一：域名申请商改名会带动资产的申请商，服务不会 */
+.kind-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kind-opt {
+  display: grid; gap: 4px; text-align: left;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--field-border);
+  background: var(--chip-bg);
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s var(--ease-spring);
+}
+.kind-opt b { font-size: 12.5px; font-weight: 650; color: var(--text); }
+.kind-opt span { font-size: 11px; line-height: 1.45; color: var(--text-3); }
+.kind-opt:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.kind-opt:active { transform: scale(0.985); }
+.kind-opt.active {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.kind-opt.active b { color: var(--accent); }
+
+/* 平台卡片标题旁的「申请商」小标：只给申请商平台挂，服务平台不加噪音 */
+.plat-kind {
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 650;
+  vertical-align: 2px;
+  color: var(--p);
+  background: color-mix(in srgb, var(--p) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--p) 28%, transparent);
+}
+
+@media (max-width: 720px) {
+  .kind-pick { grid-template-columns: 1fr; }
+}

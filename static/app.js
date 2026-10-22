@@ -199,6 +199,8 @@ function platformColor(name) {
 /* 申请商配色：只给已知的几个固定色，不做名称哈希 */
 const PROVIDER_COLOR = {
   dpdns: ["#1C6E52", "#4ED9A8"],
+  // 同一家换过招牌时沿用原来的绿色：名字里含 digitalplat 的品牌都命中这条
+  digitalplat: ["#1C6E52", "#4ED9A8"],
   dnshe: ["#6B3FC4", "#B18CFF"],
   "eu.org": ["#5A6072", "#A8AFC0"],
   cloudflare: ["#C8620A", "#FFA23D"],
@@ -211,6 +213,8 @@ const PROVIDER_COLOR = {
 function providerColor(name) {
   const key = String(name || "").toLowerCase();
   if (PROVIDER_COLOR[key]) return PROVIDER_COLOR[key][isDark() ? 1 : 0];
+  // 允许「Xxx One」这类复合名命中已知品牌（如 digitalplat / namecheap）
+  for (const k in PROVIDER_COLOR) if (key.includes(k)) return PROVIDER_COLOR[k][isDark() ? 1 : 0];
   return isDark() ? "#A8AFC0" : "#5A6072";
 }
 
@@ -480,6 +484,7 @@ function renderChips() {
         `<button class="chip sm ${state.provider === p ? "active" : ""}" data-prov="${esc(p)}" style="--c:${providerColor(p)}">${esc(p)}<span class="chip-n">${provCounts[p]}</span></button>`
       );
     }
+    row.push(`<button class="chip sm chip-ghost" data-prov-rename="1" title="批量改申请商的名字（平台改名后没跟上时用这里）">${icon("edit")}改名</button>`);
     provWrap.innerHTML = row.join("");
   }
 }
@@ -667,7 +672,7 @@ function platformBlock(p) {
     <header class="plat-head" role="button" tabindex="0" aria-expanded="${!folded}">
       <span class="plat-mark">${icon(platformIcon(p.platform))}</span>
       <div class="plat-id">
-        <h3>${esc(p.platform)}</h3>
+        <h3>${esc(p.platform)}${p.kind === "registrar" ? `<span class="plat-kind" title="域名申请商：改名会把资产的申请商一起带走">申请商</span>` : ""}</h3>
         <p>${p.account_count} 个账号${p.accounts.some((a) => a.id === null) ? " · 含未归属" : ""} · ${esc(catSummary(r.byCat))}</p>
       </div>
       <div class="plat-stats">${stats.join("")}</div>
@@ -1163,15 +1168,37 @@ async function saveAccount() {
 
 /* ---------------------------------------------------------- 表单：平台重命名 */
 /* 平台是账号 platform 聚合出来的，没有独立表；改名 = 把这批账号的 platform 统一换掉。
-   后端会把资产上的 platform 投影一起刷，前端只需把本地筛选 / 折叠引用跟着挪。 */
+   后端会把资产上的 platform 投影一起刷，前端只需把本地筛选 / 折叠引用跟着挪。
+   平台还有「属性」：域名申请商 registrar / 服务 service —— 只有申请商改名才动资产的 provider，
+   否则改 Cloudflare 这种服务平台时会把挂在它名下的域名申请商一起改掉（用户明确担心过这点）。 */
+function platKind() {
+  return $("#platKind .kind-opt.active")?.dataset.kind || "service";
+}
+
+function syncPlatSyncLine() {
+  const p = state.tree.find((x) => x.platform === state.renamingPlatform);
+  const name = state.renamingPlatform || "";
+  const provSame = state.assets.filter((a) => (a.provider || "").toLowerCase() === name.toLowerCase());
+  const provLabel = [...new Set(provSame.map((a) => (a.provider || "").trim()))][0] || name;
+  const isRegistrar = platKind() === "registrar";
+  $("#platSyncLine").hidden = !isRegistrar || !provSame.length;
+  $("#platSyncText").textContent = `同时把这 ${provSame.length} 项资产的申请商「${provLabel}」改成新名字`;
+  $("#platHint").textContent = isRegistrar
+    ? "申请商改名：账号、资产、以及资产上的申请商标记会一起换成新名字。"
+    : "服务改名：只换平台名，挂在这个平台下的域名申请商不受影响。";
+  if (p) $("#platSub").textContent = `${p.account_count} 个账号 · ${p.asset_count} 项资产 · ${isRegistrar ? "域名申请商" : "服务"}`;
+}
+
 function openRenamePlatform(name) {
   const p = state.tree.find((x) => x.platform === name);
   if (!p) return;
   state.renamingPlatform = name;
   $("#platTitle").textContent = "重命名平台";
-  $("#platSub").textContent = `${p.account_count} 个账号 · ${p.asset_count} 项资产会一起改名`;
   $("#p-name").value = name;
-  $("#platHint").textContent = "只换称呼，资产不会丢；新名字下如果已经有账号，两边会合成一个平台。";
+  const kind = p.kind === "registrar" ? "registrar" : "service";
+  $$("#platKind .kind-opt").forEach((b) => b.classList.toggle("active", b.dataset.kind === kind));
+  $("#platSyncProv").checked = true;
+  syncPlatSyncLine();
   const layer = $("#platLayer");
   layer.hidden = false;
   requestAnimationFrame(() => {
@@ -1203,33 +1230,122 @@ async function savePlatformName() {
     toast("平台名不能为空", true);
     return;
   }
+  const kind = platKind();
+  const prevKind = state.tree.find((x) => x.platform === from)?.kind || "service";
+  const renamed = to !== from;
+  const kindChanged = kind !== prevKind;
   const btn = $("#platSave");
   btn.disabled = true;
   try {
-    if (to !== from) {
+    if (renamed || kindChanged) {
+      // 只有域名申请商平台才允许同步申请商，服务平台的这个勾选根本不显示
+      const syncProvider = kind === "registrar" && !$("#platSyncLine").hidden && $("#platSyncProv").checked;
       const r = await api(`/api/platforms/${encodeURIComponent(from)}/rename`, {
+        method: "POST",
+        body: JSON.stringify({ to, kind, sync_provider: syncProvider }),
+      });
+      // 本地引用跟着改名，否则筛选 / 折叠 / 账号内筛选会指向已经不存在的旧平台名
+      if (renamed) {
+        if (state.platform === from) state.platform = to;
+        if (state.collapsedPlatforms.has(from)) {
+          state.collapsedPlatforms.delete(from);
+          state.collapsedPlatforms.add(to);
+          saveFolded();
+        }
+        for (const key of [...state.collapsedAccounts]) {
+          const [pfx, ...rest] = key.split("|");
+          if (pfx !== from) continue;
+          state.collapsedAccounts.delete(key);
+          state.collapsedAccounts.add([to, ...rest].join("|"));
+        }
+        saveFolded();
+        state.accCat.clear();
+      }
+      if (r.providers && state.provider.toLowerCase() === from.toLowerCase()) state.provider = to;
+      await refresh();
+      const tail = [
+        r.merged ? "已合并同名平台" : "",
+        r.providers ? `${r.providers} 项申请商一起改了` : "",
+      ].filter(Boolean).join("，");
+      toast(renamed ? `已改名为「${to}」${tail ? "，" + tail : ""}` : `平台属性已设为${kind === "registrar" ? "域名申请商" : "服务"}`);
+    }
+    closePlatSheet();
+  } catch (e) {
+    if (e.message !== "unauthorized") toast(e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------------------------------------------------------- 表单：申请商改名 */
+/* 申请商只是资产上的一个文本标记（哪家给的域名），与平台 / 账号无关，
+   所以这里只刷 provider。用于「平台改过名、申请商还留着旧词」的补救。 */
+function providerCounts() {
+  const out = new Map();
+  for (const a of state.assets) {
+    const p = (a.provider || "").trim();
+    if (p) out.set(p, (out.get(p) || 0) + 1);
+  }
+  return out;
+}
+
+function openRenameProvider(prefer) {
+  const counts = providerCounts();
+  if (!counts.size) {
+    toast("还没有资产登记申请商", true);
+    return;
+  }
+  const names = [...counts.keys()].sort((a, b) => a.localeCompare(b, "zh-CN"));
+  const pick = names.includes(prefer) ? prefer : names[0];
+  $("#pv-from").innerHTML = names
+    .map((n) => `<option value="${esc(n)}" ${n === pick ? "selected" : ""}>${esc(n)}（${counts.get(n)} 项）</option>`)
+    .join("");
+  $("#pv-to").value = pick;
+  $("#provHint").textContent = "只改这一个标记，平台、账号、到期与费用都不动。";
+  $("#provSub").textContent = `${counts.size} 个申请商正在使用`;
+  const layer = $("#provLayer");
+  layer.hidden = false;
+  requestAnimationFrame(() => {
+    layer.classList.add("open");
+    setTimeout(() => {
+      const el = $("#pv-to");
+      el.focus({ preventScroll: true });
+      el.select();
+    }, 240);
+  });
+}
+
+function closeProviderSheet() {
+  const layer = $("#provLayer");
+  layer.classList.remove("open");
+  setTimeout(() => { layer.hidden = true; }, 340);
+}
+
+async function saveProviderName() {
+  const from = $("#pv-from").value;
+  const to = $("#pv-to").value.trim();
+  if (!from) return;
+  if (!to) {
+    const el = $("#pv-to");
+    el.focus();
+    el.style.borderColor = "var(--red)";
+    setTimeout(() => (el.style.borderColor = ""), 1600);
+    toast("申请商名不能为空", true);
+    return;
+  }
+  const btn = $("#provSave");
+  btn.disabled = true;
+  try {
+    if (to.toLowerCase() !== from.toLowerCase()) {
+      const r = await api(`/api/providers/${encodeURIComponent(from)}/rename`, {
         method: "POST",
         body: JSON.stringify({ to }),
       });
-      // 本地引用跟着改名，否则筛选 / 折叠 / 账号内筛选会指向已经不存在的旧平台名
-      if (state.platform === from) state.platform = to;
-      if (state.collapsedPlatforms.has(from)) {
-        state.collapsedPlatforms.delete(from);
-        state.collapsedPlatforms.add(to);
-        saveFolded();
-      }
-      for (const key of [...state.collapsedAccounts]) {
-        const [pfx, ...rest] = key.split("|");
-        if (pfx !== from) continue;
-        state.collapsedAccounts.delete(key);
-        state.collapsedAccounts.add([to, ...rest].join("|"));
-      }
-      saveFolded();
-      state.accCat.clear();
+      if (state.provider.toLowerCase() === from.toLowerCase()) state.provider = to;
       await refresh();
-      toast(r.merged ? `已改名为「${to}」，并合并到已有平台` : `已改名为「${to}」`);
+      toast(`申请商已改为「${to}」，${r.assets} 项资产${r.merged ? "，已并入同名的现有申请商" : ""}`);
     }
-    closePlatSheet();
+    closeProviderSheet();
   } catch (e) {
     if (e.message !== "unauthorized") toast(e.message, true);
   } finally {
@@ -1541,6 +1657,11 @@ function bind() {
   $("#providerChips").addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
     if (!chip) return;
+    // 「改名」是操作按钮，不是筛选项 —— 少了这个分支会把 state.provider 设成 undefined
+    if (chip.dataset.provRename !== undefined) {
+      openRenameProvider(state.provider !== "all" ? state.provider : null);
+      return;
+    }
     state.provider = chip.dataset.prov;
     state.accCat.clear();
     renderChips();
@@ -1760,7 +1881,29 @@ function bind() {
   $("#platSave").addEventListener("click", savePlatformName);
   $("#platForm").addEventListener("submit", (e) => { e.preventDefault(); savePlatformName(); });
   $("#p-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); savePlatformName(); } });
+  // 平台属性：切到「服务」时把「同步申请商」的勾选收起来
+  $("#platKind").addEventListener("click", (e) => {
+    const b = e.target.closest(".kind-opt");
+    if (!b) return;
+    $$("#platKind .kind-opt").forEach((el) => el.classList.toggle("active", el === b));
+    syncPlatSyncLine();
+  });
   $$('#platLayer [data-close="plat"]').forEach((el) => el.addEventListener("click", closePlatSheet));
+
+  // 申请商改名
+  $("#provClose").addEventListener("click", closeProviderSheet);
+  $("#provCancel").addEventListener("click", closeProviderSheet);
+  $("#provSave").addEventListener("click", saveProviderName);
+  $("#provForm").addEventListener("submit", (e) => { e.preventDefault(); saveProviderName(); });
+  $("#pv-to").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveProviderName(); } });
+  $("#pv-from").addEventListener("change", (e) => {
+    // 换一个申请商时，新名字默认跟着回填，避免忘了改
+    const v = e.target.value;
+    $("#pv-to").value = v;
+    const n = providerCounts().get(v) || 0;
+    $("#provHint").textContent = `这一改动会影响 ${n} 项资产；平台、账号、到期与费用都不动。`;
+  });
+  $$('#provLayer [data-close="prov"]').forEach((el) => el.addEventListener("click", closeProviderSheet));
 
   // 定时备份
   $("#bkClose").addEventListener("click", closeBackupSheet);
@@ -1800,6 +1943,7 @@ function bind() {
     if (e.key === "Escape") {
       if (!$("#confirmLayer").hidden) return closeConfirm();
       if (!$("#platLayer").hidden) return closePlatSheet();
+      if (!$("#provLayer").hidden) return closeProviderSheet();
       if (!$("#backupLayer").hidden) return closeBackupSheet();
       if (!$("#accLayer").hidden) return closeAccountSheet();
       if (!$("#sheetLayer").hidden) return closeSheet();
