@@ -1017,6 +1017,37 @@ function fillAccountSelect(selectedId) {
   $("#f-account").innerHTML = opts.join("");
 }
 
+/* 「托管于」：申请商名下的域名，选中一个 Cloudflare 账号就在它下面建一条同名域名资产。
+   已经托管的（同名域名已在某个 CF 账号里）只读展示；新增 / 复制模式下整行隐藏。 */
+function fillHostSelect(asset) {
+  const row = $("#hostRow");
+  const sel = $("#f-host");
+  const isDomain = !!asset && !state.copySource && asset.id != null &&
+    (asset.category === "domain" || asset.category === "subdomain");
+  row.hidden = !isDomain;
+  if (!isDomain) { sel.innerHTML = ""; return; }
+
+  const cf = allAccounts().filter((a) => /cloudflare/i.test(a.platform || ""));
+  const key = hostKeyOf(asset);
+  const same = cf.filter((acc) => state.assets.some((x) => x.account_id === acc.id && hostKeyOf(x) === key));
+  if (same.length) {
+    sel.innerHTML = `<option>已托管 · ${same.map((a) => `${a.platform} › ${a.name}`).join(" / ")}</option>`;
+    sel.disabled = true;
+    $("#hostHint").textContent = "这条域名在 Cloudflare 下已经有同名资产了";
+    return;
+  }
+  if (!cf.length) {
+    sel.innerHTML = `<option>还没有 Cloudflare 账号</option>`;
+    sel.disabled = true;
+    $("#hostHint").textContent = "先到 Cloudflare 平台下建一个账号，再回来选";
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = `<option value="">选择 Cloudflare 账号…</option>` +
+    cf.map((a) => `<option value="${a.id}">${esc(a.name)}${a.label ? " · " + esc(a.label) : ""}（${a.asset_count}）</option>`).join("");
+  $("#hostHint").textContent = "选中后会在这个账号下自动建一条同名域名资产，申请商与到期信息一并带过去";
+}
+
 /* openSheet(asset, presetAccountId, { copy: true })
    复制模式：字段全部照抄来源资产，但不带 id —— 保存走 POST 生成新资产；
    归属账号可以在下拉里换成任意平台的任意账号，所以跨账号复制不用额外流程。 */
@@ -1058,6 +1089,7 @@ function openSheet(asset = null, presetAccountId = null, opts = {}) {
     : "还没有账号，先点右侧「新建」创建第一个";
 
   $("#catPicker").innerHTML = catPickerHTML(src?.category ?? "domain");
+  fillHostSelect(asset);
   $("#deleteBtn").hidden = !asset || copy;
   $("#copyBtn").hidden = !asset || copy;
   $("#saveBtn span").textContent = copy ? "保存副本" : "保存";
@@ -1988,6 +2020,9 @@ function bind() {
     const opt = e.target.closest(".cat-opt");
     if (!opt) return;
     $$("#catPicker .cat-opt").forEach((o) => o.classList.toggle("active", o === opt));
+    // 类别一换，「托管于」这一行也要跟着显隐（只有域名类才有意义）
+    const cur = state.assets.find((a) => a.id === state.editingId);
+    if (cur) fillHostSelect({ ...cur, category: opt.dataset.cat });
   });
   $("#tagSuggest").addEventListener("click", (e) => {
     const b = e.target.closest(".tag-sug");
@@ -1999,6 +2034,28 @@ function bind() {
     input.focus();
   });
   $("#assetForm").addEventListener("submit", (e) => { e.preventDefault(); saveAsset(); });
+  // 「托管于」选中账号 → 在该 Cloudflare 账号下建一条同名域名资产（幂等，已存在就跳过）
+  $("#f-host").addEventListener("change", async (e) => {
+    const accId = Number(e.target.value);
+    if (!accId || !state.editingId) return;
+    const acc = allAccounts().find((a) => a.id === accId);
+    e.target.disabled = true;
+    try {
+      const r = await api(`/api/assets/${state.editingId}/host`, {
+        method: "POST",
+        body: JSON.stringify({ account_id: accId }),
+      });
+      await refresh();
+      toast(r.created
+        ? `已导入到 ${r.asset.platform} › ${r.asset.account}`
+        : `${acc.name} 下已有同名域名，跳过`);
+      closeSheet();
+    } catch (err) {
+      if (err.message !== "unauthorized") toast(err.message, true);
+      e.target.disabled = false;
+      e.target.value = "";
+    }
+  });
   $("#quickAccount").addEventListener("click", () => openAccountSheet(null, true));
 
   // 账号弹层

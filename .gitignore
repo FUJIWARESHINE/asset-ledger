@@ -1,10 +1,7 @@
 .venv/
 data/
 shots/
-.edge-tmp/
-.edge-cdp/
-.edge-probe/
-.edge-*test/
+.edge-*/
 .workbuddy/
 __pycache__/
 *.pyc

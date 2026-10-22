@@ -319,6 +319,10 @@ class PlatformOrderIn(BaseModel):
     order: list[str] = Field(default_factory=list)
 
 
+class HostAssetIn(BaseModel):
+    account_id: int
+
+
 # ---------------------------------------------------------------- 聚合
 def yearly_of(item: dict) -> float:
     if item["cycle"] == "yearly":
@@ -911,6 +915,63 @@ def stats(password: str | None = Header(default=None, alias="X-App-Password")) -
         "yearly_cost": costs.get("CNY", 0.0),
         "monthly_cost": round(costs.get("CNY", 0.0) / 12, 2),
     }
+
+
+@app.post("/api/assets/{asset_id}/host")
+def host_asset(
+    asset_id: int,
+    payload: HostAssetIn,
+    password: str | None = Header(default=None, alias="X-App-Password"),
+) -> dict[str, Any]:
+    """把「申请商名下的域名」托管到某个账号（通常是 Cloudflare）下。
+
+    双维度模型的补全动作：源资产留在申请商账号里不动，同时在托管账号下建一条同名域名，
+    两边靠域名名 + provider/provider_account 关联，之后「已托管」筛选就能识别出来。
+    目标账号下已有同名域名时不会重复插入（幂等），直接返回已有的那条。
+    """
+    guard(password)
+    with db() as conn:
+        src = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+        if src is None:
+            raise HTTPException(status_code=404, detail="资产不存在")
+        if src["category"] not in ("domain", "subdomain"):
+            raise HTTPException(status_code=400, detail="只有域名类资产能标记托管")
+        acc = conn.execute("SELECT * FROM accounts WHERE id = ?", (payload.account_id,)).fetchone()
+        if acc is None:
+            raise HTTPException(status_code=404, detail="目标账号不存在")
+
+        name = (src["name"] or "").strip()
+        dup = conn.execute(
+            "SELECT * FROM assets WHERE account_id = ? AND lower(trim(name)) = lower(?)",
+            (acc["id"], name),
+        ).fetchone()
+        if dup is not None:
+            return {"created": False, "asset": row_out(dup)}
+
+        # 申请商信息跟着带过去：源资产没填就退回它自己所在平台/账号（它就是申请商那边）
+        data = {
+            "name": name,
+            "category": src["category"],
+            "url": src["url"] or "",
+            "environment": src["environment"] or "prod",
+            "status": src["status"] or "active",
+            "expires_at": src["expires_at"] or "",
+            "auto_renew": src["auto_renew"],
+            "cost": src["cost"] or 0,
+            "currency": src["currency"] or "CNY",
+            "cycle": src["cycle"] or "none",
+            "credential_hint": src["credential_hint"] or "",
+            "tags": src["tags"] or "",
+            "notes": src["notes"] or "",
+            "pinned": 0,
+            "provider": (src["provider"] or "").strip() or (src["platform"] or "").strip(),
+            "provider_account": (src["provider_account"] or "").strip() or (src["account"] or "").strip(),
+        }
+        ts = now_iso()
+        params = asset_params(data, acc)
+        new_id = conn.execute(INSERT_ASSET_SQL, {**params, "created_at": ts, "updated_at": ts}).lastrowid
+        row = conn.execute("SELECT * FROM assets WHERE id = ?", (new_id,)).fetchone()
+    return {"created": True, "asset": row_out(row)}
 
 
 @app.post("/api/assets")

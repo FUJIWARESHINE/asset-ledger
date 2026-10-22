@@ -245,6 +245,15 @@
         <p class="hint" id="accountHint">资产必须有归属账号，平台会自动跟着账号走</p>
       </div>
 
+      <div class="field span2" id="hostRow" hidden>
+        <span class="flabel">托管于</span>
+        <div class="select-wrap full">
+          <select id="f-host"></select>
+          <svg><use href="#i-chev"/></svg>
+        </div>
+        <p class="hint" id="hostHint"></p>
+      </div>
+
       <div class="field span2">
         <label for="f-name">名称 <em>*</em></label>
         <input id="f-name" name="name" required maxlength="160" placeholder="例如：demo-web 仓库 / example.com" />
@@ -320,6 +329,7 @@
       </div>
 
       <div class="field">
+        <span class="flabel">续费</span>
         <label class="toggle-line" for="f-renew">
           <span>自动续费</span>
           <span class="switch"><input id="f-renew" name="auto_renew" type="checkbox" /><i></i></span>
