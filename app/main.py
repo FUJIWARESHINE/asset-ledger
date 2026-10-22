@@ -83,12 +83,38 @@ EXPIRY_ORDER = {"expired": 0, "urgent": 1, "soon": 2, "ok": 3, "none": 4}
 
 
 # ---------------------------------------------------------------- database
+def db_diagnosis(exc: BaseException) -> str:
+    """把 sqlite 含糊的 "unable to open database file" 变成能直接定位的报错。"""
+    where = DB_PATH.parent
+    uid = os.getuid() if hasattr(os, "getuid") else "?"
+    gid = os.getgid() if hasattr(os, "getgid") else "?"
+    lines = [f"无法打开数据库 {DB_PATH}", f"  sqlite: {exc}", f"  进程 uid={uid} gid={gid}"]
+    try:
+        st = where.stat()
+        lines.append(
+            f"  目录 {where} 存在，属主 uid={st.st_uid} gid={st.st_gid} mode={oct(st.st_mode & 0o777)}"
+        )
+        if not os.access(where, os.W_OK):
+            lines.append("  ✗ 该目录对当前进程不可写，宿主机上执行（把路径换成实际数据目录）：")
+            lines.append(f"    sudo chown -R {uid}:{gid} <宿主机数据目录>")
+    except OSError as err:
+        lines.append(f"  目录 {where} 不可访问：{err}")
+        lines.append("  ✗ 检查 compose 的 volumes 是否指向一个真实存在的目录（而不是同名文件）")
+    if DB_PATH.exists() and not os.access(DB_PATH, os.W_OK):
+        lines.append(f"  ✗ 库文件存在但不可写：{DB_PATH}")
+    return "\n".join(lines)
+
+
 @contextmanager
 def db():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = None
+    try:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+    except (sqlite3.Error, OSError) as exc:
+        raise RuntimeError(db_diagnosis(exc)) from exc
     try:
         yield conn
         conn.commit()

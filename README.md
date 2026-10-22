@@ -95,7 +95,27 @@ docker compose up -d
 | `APP_TITLE` | `资产统计` | 页面标题 |
 | `DB_PATH` | `/data/assets.db` | SQLite 路径，挂载 `/data` 即可持久化 |
 | `BACKUP_DIR` | 库文件同级的 `backups/` | 定时备份目录，默认 `/data/backups`，跟数据卷走 |
+| `PUID` / `PGID` | `1001` / `1001` | 容器写数据目录用的 uid/gid，跟宿主机账号对齐用 |
 | `TZ` | `Asia/Shanghai` | 时区，影响「剩余天数」计算 |
+
+### 数据目录权限
+
+容器以 root 启动，入口脚本先把 `data/` 的属主改成 `PUID:PGID`（默认 `1001`），
+再用 `setpriv` 降权运行应用。所以宿主机上的 `data/` 无论是谁建的
+（Docker 自动创建 bind mount 目录时通常是 `root:root`）都能直接跑起来，
+不需要手动 `chown`。
+
+如果你的 NAS 上宿主目录属于别的账号（比如 `uid=1026`），改这两个值即可：
+
+```yaml
+environment:
+  PUID: "1026"
+  PGID: "100"
+```
+
+若启动日志出现 `unable to open database file`，程序会打印库路径、进程 uid、
+目录属主与可写性，并给出对应的 `chown` 命令，照着执行即可。
+
 
 ## 数据与备份
 

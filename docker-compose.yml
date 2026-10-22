@@ -9,10 +9,15 @@ services:
     ports:
       - "8787:8787"
     volumes:
+      # 数据目录（SQLite + 定时备份）。宿主机上目录属主是什么都行，
+      # 容器启动时会自动改成 PUID:PGID 的属主再降权运行。
       - ./data:/data
     environment:
       TZ: Asia/Shanghai
       APP_TITLE: 资产统计
+      # 写入 /data 的用户，默认 1001（多数 NAS 的首个用户）。想跟宿主某个账号对齐就改这两个。
+      PUID: "1001"
+      PGID: "1001"
       # 需要密码保护时取消注释（前后端都会生效）
       # APP_PASSWORD: "your-password"
     healthcheck:
