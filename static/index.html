@@ -114,22 +114,22 @@
 
 <main>
   <section class="stats-grid" id="statsGrid">
-    <article class="stat glass" data-key="platforms">
+    <article class="stat glass spot" data-key="platforms">
       <div class="stat-top"><span class="stat-label">平台</span><span class="stat-ico"><svg><use href="#i-cloud"/></svg></span></div>
       <strong class="stat-value" data-num="0">0</strong>
       <span class="stat-foot" data-foot="platforms">全部分组</span>
     </article>
-    <article class="stat glass" data-key="accounts">
+    <article class="stat glass spot" data-key="accounts">
       <div class="stat-top"><span class="stat-label">账号</span><span class="stat-ico green"><svg><use href="#i-user"/></svg></span></div>
       <strong class="stat-value" data-num="0">0</strong>
       <span class="stat-foot" data-foot="accounts">平均资产数</span>
     </article>
-    <article class="stat glass" data-key="total">
+    <article class="stat glass spot" data-key="total">
       <div class="stat-top"><span class="stat-label">资产总数</span><span class="stat-ico"><svg><use href="#i-layers"/></svg></span></div>
       <strong class="stat-value" data-num="0">0</strong>
       <span class="stat-foot" data-foot="total">覆盖全部平台</span>
     </article>
-    <article class="stat glass" data-key="cost">
+    <article class="stat glass spot" data-key="cost">
       <div class="stat-top"><span class="stat-label">年化成本</span><span class="stat-ico amber"><svg><use href="#i-wallet"/></svg></span></div>
       <strong class="stat-value" data-num="0" data-money="1">0</strong>
       <span class="stat-foot" data-foot="cost">月均 ——</span>
@@ -137,10 +137,55 @@
   </section>
 
   <div class="filterbar">
-    <div class="chips" id="categoryChips"></div>
-    <div class="chips chips-sub" id="platformChips"></div>
-    <div class="chips chips-sub" id="providerChips" hidden></div>
-    <div class="chips chips-sub" id="hostChips" hidden></div>
+    <div class="fbar" id="filterBar">
+      <div class="fdrop" data-drop="cat">
+        <button class="fd-btn" type="button" data-drop-btn="cat" aria-haspopup="listbox" aria-expanded="false" aria-label="按类型筛选">
+          <svg class="fd-ico"><use href="#i-layers"/></svg>
+          <span class="fd-cap">类型</span>
+          <b class="fd-val">全部</b>
+          <span class="fd-n"></span>
+          <svg class="fd-chev"><use href="#i-chev"/></svg>
+        </button>
+        <div class="fd-menu glass" id="categoryChips" role="listbox" aria-label="类型" hidden></div>
+      </div>
+
+      <div class="fdrop" data-drop="plat">
+        <button class="fd-btn" type="button" data-drop-btn="plat" aria-haspopup="listbox" aria-expanded="false" aria-label="按平台筛选">
+          <svg class="fd-ico"><use href="#i-cloud"/></svg>
+          <span class="fd-cap">平台</span>
+          <b class="fd-val">全部平台</b>
+          <span class="fd-n"></span>
+          <svg class="fd-chev"><use href="#i-chev"/></svg>
+        </button>
+        <div class="fd-menu glass" id="platformChips" role="listbox" aria-label="平台" hidden></div>
+      </div>
+
+      <div class="fdrop" data-drop="prov" hidden>
+        <button class="fd-btn" type="button" data-drop-btn="prov" aria-haspopup="listbox" aria-expanded="false" aria-label="按申请商筛选">
+          <svg class="fd-ico"><use href="#i-key"/></svg>
+          <span class="fd-cap">申请商</span>
+          <b class="fd-val">全部申请商</b>
+          <span class="fd-n"></span>
+          <svg class="fd-chev"><use href="#i-chev"/></svg>
+        </button>
+        <div class="fd-menu glass" id="providerChips" role="listbox" aria-label="申请商" hidden></div>
+      </div>
+
+      <div class="fdrop" data-drop="host" hidden>
+        <button class="fd-btn" type="button" data-drop-btn="host" aria-haspopup="listbox" aria-expanded="false" aria-label="按托管状态筛选">
+          <svg class="fd-ico"><use href="#i-globe"/></svg>
+          <span class="fd-cap">托管</span>
+          <b class="fd-val">全部域名</b>
+          <span class="fd-n"></span>
+          <svg class="fd-chev"><use href="#i-chev"/></svg>
+        </button>
+        <div class="fd-menu glass" id="hostChips" role="listbox" aria-label="托管状态" hidden></div>
+      </div>
+
+      <button class="fd-reset" type="button" id="filterReset" hidden>
+        <svg><use href="#i-close"/></svg><span>清空筛选</span>
+      </button>
+    </div>
   </div>
 
   <div class="alert-bar" id="alertBar" hidden>

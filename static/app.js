@@ -455,50 +455,86 @@ function renderStats() {
 }
 
 /* ---------------------------------------------------------- 渲染：筛选 */
+/* 更新某个下拉的触发按钮：当前值 / 数量 / 是否激活 / 配色 */
+function fdSet(key, { label, n, on, color }) {
+  const wrap = document.querySelector(`.fdrop[data-drop="${key}"]`);
+  if (!wrap) return null;
+  const btn = wrap.querySelector(".fd-btn");
+  if (btn) {
+    btn.querySelector(".fd-val").textContent = label;
+    btn.querySelector(".fd-n").textContent = (n === undefined || n === null) ? "" : n;
+    btn.classList.toggle("is-on", !!on);
+    if (color) btn.style.setProperty("--c", color);
+    else btn.style.removeProperty("--c");
+  }
+  return wrap;
+}
+
+function anyFilterOn() {
+  return state.cat !== "all" || state.platform !== "all" ||
+    state.provider !== "all" || state.host !== "all";
+}
+
+function syncFilterReset() {
+  const btn = $("#filterReset");
+  if (btn) btn.hidden = !anyFilterOn();
+}
+
 function renderChips() {
   const counts = {};
   for (const a of state.assets) counts[a.category] = (counts[a.category] || 0) + 1;
 
+  // 类型：类别只有存在资产时才列出来
   const items = [
     `<button class="chip ${state.cat === "all" ? "active" : ""}" data-cat="all">${icon("layers")}全部<span class="chip-n">${state.assets.length}</span></button>`,
   ];
+  let catLabel = "全部", catN = state.assets.length, catCol = null;
   for (const c of state.meta.categories || []) {
     if (!counts[c.id]) continue;
     const col = isDark() ? c.color_dark || c.color : c.color;
     items.push(
       `<button class="chip ${state.cat === c.id ? "active" : ""}" data-cat="${c.id}" style="--c:${col}">${icon(c.icon)}${esc(c.label)}<span class="chip-n">${counts[c.id]}</span></button>`
     );
+    if (state.cat === c.id) { catLabel = c.label; catN = counts[c.id]; catCol = col; }
   }
   $("#categoryChips").innerHTML = items.join("");
+  fdSet("cat", { label: catLabel, n: catN, on: state.cat !== "all", color: catCol });
 
+  // 平台：数量显示该平台下的账号数
   const plats = state.tree.filter((p) => p.platform !== "未归类");
-  const sub = [`<button class="chip sm ${state.platform === "all" ? "active" : ""}" data-platform="all">${icon("cloud")}全部平台<span class="chip-n">${plats.length}</span></button>`];
+  const sub = [`<button class="chip ${state.platform === "all" ? "active" : ""}" data-platform="all">${icon("cloud")}全部平台<span class="chip-n">${plats.length}</span></button>`];
+  let platLabel = "全部平台", platN = plats.length, platCol = null;
   for (const p of plats) {
     const col = platformColor(p.platform);
     sub.push(
-      `<button class="chip sm ${state.platform === p.platform ? "active" : ""}" data-platform="${esc(p.platform)}" style="--c:${col}">${icon(platformIcon(p.platform))}${esc(p.platform)}<span class="chip-n">${p.account_count}</span></button>`
+      `<button class="chip ${state.platform === p.platform ? "active" : ""}" data-platform="${esc(p.platform)}" style="--c:${col}">${icon(platformIcon(p.platform))}${esc(p.platform)}<span class="chip-n">${p.account_count}</span></button>`
     );
+    if (state.platform === p.platform) { platLabel = p.platform; platN = p.account_count; platCol = col; }
   }
   $("#platformChips").innerHTML = sub.join("");
+  fdSet("plat", { label: platLabel, n: platN, on: state.platform !== "all", color: platCol });
 
   // 域名托管状态：申请商有 + Cloudflare 也有 = 已托管；只在申请商那边 = 未托管
-  const hostWrap = $("#hostChips");
-  if (hostWrap) {
-    let hosted = 0, unhosted = 0;
-    for (const a of state.assets) {
-      const hs = domainHostState(a);
-      if (hs === "hosted") hosted++;
-      else if (hs === "unhosted") unhosted++;
-    }
-    const total = hosted + unhosted;
-    hostWrap.hidden = !total;
-    if (total) {
-      hostWrap.innerHTML = [
-        `<button class="chip sm ${state.host === "all" ? "active" : ""}" data-host="all">${icon("globe")}全部域名<span class="chip-n">${total}</span></button>`,
-        `<button class="chip sm ${state.host === "hosted" ? "active" : ""}" data-host="hosted" style="--c:${catColor("domain")}">${icon("check")}已托管<span class="chip-n">${hosted}</span></button>`,
-        `<button class="chip sm ${state.host === "unhosted" ? "active" : ""}" data-host="unhosted" style="--c:#E08600">${icon("alert")}未托管<span class="chip-n">${unhosted}</span></button>`,
-      ].join("");
-    }
+  let hosted = 0, unhosted = 0;
+  for (const a of state.assets) {
+    const hs = domainHostState(a);
+    if (hs === "hosted") hosted++;
+    else if (hs === "unhosted") unhosted++;
+  }
+  const hostTotal = hosted + unhosted;
+  const hostWrap = fdSet("host", {
+    label: state.host === "hosted" ? "已托管" : state.host === "unhosted" ? "未托管" : "全部域名",
+    n: state.host === "hosted" ? hosted : state.host === "unhosted" ? unhosted : hostTotal,
+    on: state.host !== "all",
+    color: state.host === "hosted" ? catColor("domain") : state.host === "unhosted" ? "#E08600" : null,
+  });
+  if (hostWrap) hostWrap.hidden = !hostTotal;
+  if (hostTotal) {
+    $("#hostChips").innerHTML = [
+      `<button class="chip ${state.host === "all" ? "active" : ""}" data-host="all">${icon("globe")}全部域名<span class="chip-n">${hostTotal}</span></button>`,
+      `<button class="chip ${state.host === "hosted" ? "active" : ""}" data-host="hosted" style="--c:${catColor("domain")}">${icon("check")}已托管<span class="chip-n">${hosted}</span></button>`,
+      `<button class="chip ${state.host === "unhosted" ? "active" : ""}" data-host="unhosted" style="--c:#E08600">${icon("alert")}未托管<span class="chip-n">${unhosted}</span></button>`,
+    ].join("");
   }
 
   // 申请商是域名的第二个归属维度：点 dpdns 能看到挂在各个 CF 账号下的全部 dpdns 域名
@@ -507,20 +543,68 @@ function renderChips() {
     const p = (a.provider || "").trim();
     if (p) provCounts[p] = (provCounts[p] || 0) + 1;
   }
-  const provWrap = $("#providerChips");
-  if (!provWrap) return;
   const provs = Object.keys(provCounts).sort();
-  provWrap.hidden = !provs.length;
+  const provWrap = fdSet("prov", {
+    label: state.provider === "all" ? "全部申请商" : state.provider,
+    n: state.provider === "all" ? provs.length : provCounts[state.provider] || 0,
+    on: state.provider !== "all",
+    color: state.provider === "all" ? null : providerColor(state.provider),
+  });
+  if (provWrap) provWrap.hidden = !provs.length;
   if (provs.length) {
-    const row = [`<button class="chip sm ${state.provider === "all" ? "active" : ""}" data-prov="all">${icon("key")}全部申请商<span class="chip-n">${provs.length}</span></button>`];
+    const row = [`<button class="chip ${state.provider === "all" ? "active" : ""}" data-prov="all">${icon("key")}全部申请商<span class="chip-n">${provs.length}</span></button>`];
     for (const p of provs) {
       row.push(
-        `<button class="chip sm ${state.provider === p ? "active" : ""}" data-prov="${esc(p)}" style="--c:${providerColor(p)}">${esc(p)}<span class="chip-n">${provCounts[p]}</span></button>`
+        `<button class="chip ${state.provider === p ? "active" : ""}" data-prov="${esc(p)}" style="--c:${providerColor(p)}">${icon("dot")}${esc(p)}<span class="chip-n">${provCounts[p]}</span></button>`
       );
     }
-    row.push(`<button class="chip sm chip-ghost" data-prov-rename="1" title="批量改申请商的名字（平台改名后没跟上时用这里）">${icon("edit")}改名</button>`);
-    provWrap.innerHTML = row.join("");
+    row.push(`<button class="chip chip-ghost" data-prov-rename="1" title="批量改申请商的名字（平台改名后没跟上时用这里）">${icon("edit")}改名</button>`);
+    $("#providerChips").innerHTML = row.join("");
   }
+
+  syncFilterReset();
+}
+
+/* ---- 下拉开关 ---- */
+function closeDrops(except = null) {
+  document.querySelectorAll(".fdrop.open").forEach((d) => {
+    if (d === except) return;
+    d.classList.remove("open");
+    const m = d.querySelector(".fd-menu");
+    if (m) m.hidden = true;
+    const b = d.querySelector(".fd-btn");
+    if (b) b.setAttribute("aria-expanded", "false");
+  });
+}
+
+function openDrop(drop) {
+  const menu = drop.querySelector(".fd-menu");
+  const btn = drop.querySelector(".fd-btn");
+  if (!menu || !btn) return;
+  closeDrops(drop);
+  drop.classList.add("open");
+  menu.hidden = false;
+  btn.setAttribute("aria-expanded", "true");
+  // 靠右边界的下拉改成右对齐，免得顶出视口
+  drop.classList.remove("right");
+  const r = menu.getBoundingClientRect();
+  if (r.right > window.innerWidth - 12) drop.classList.add("right");
+}
+
+function toggleDrop(drop) {
+  if (drop.classList.contains("open")) closeDrops();
+  else openDrop(drop);
+}
+
+function resetFilters() {
+  state.cat = "all";
+  state.platform = "all";
+  state.provider = "all";
+  state.host = "all";
+  state.accCat.clear();
+  closeDrops();
+  renderChips();
+  renderBoard();
 }
 
 function renderAlertBar() {
@@ -670,7 +754,7 @@ function accountBlock(acc, platform) {
     tiles = shown.map(assetTile).join("") + addBtn;
   }
 
-  return `<div class="acc ${folded ? "folded" : ""}" data-acc="${esc(key)}">
+  return `<div class="acc ${folded ? "folded" : ""}" data-acc="${esc(key)}" style="--p:${platformColor(platform)}">
     <div class="acc-head" role="button" tabindex="0" aria-expanded="${!folded}">
       <span class="acc-avatar" style="--p:${platformColor(platform)}">${esc(initial)}</span>
       <div class="acc-id">
@@ -1545,11 +1629,32 @@ function toast(msg, isError = false) {
 }
 
 /* ---------------------------------------------------------- 主题 */
-function setTheme(next) {
-  document.documentElement.dataset.theme = next;
-  localStorage.setItem("al-theme", next);
-  $('meta[name="theme-color"]').setAttribute("content", next === "dark" ? "#06070b" : "#eef1f7");
-  renderAll();
+function setTheme(next, origin) {
+  const apply = () => {
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("al-theme", next);
+    $('meta[name="theme-color"]').setAttribute("content", next === "dark" ? "#06070b" : "#eef1f7");
+    renderAll();
+  };
+
+  // 主题切换走圆形揭示：从按钮位置扩散出去。不支持的浏览器直接切，不做事。
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!document.startViewTransition || reduce) {
+    apply();
+    return;
+  }
+  const x = origin?.x ?? window.innerWidth - 56;
+  const y = origin?.y ?? 38;
+  const r = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  const vt = document.startViewTransition(apply);
+  vt.ready
+    .then(() => {
+      document.documentElement.animate(
+        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+        { duration: 620, easing: "cubic-bezier(0.22, 1, 0.36, 1)", pseudoElement: "::view-transition-new(root)" }
+      );
+    })
+    .catch(() => {});
 }
 
 /* ---------------------------------------------------------- 密码 */
@@ -1724,7 +1829,10 @@ async function downloadBackup(name) {
 
 /* ---------------------------------------------------------- 事件 */
 function bind() {
-  $("#themeBtn").addEventListener("click", () => setTheme(isDark() ? "light" : "dark"));
+  $("#themeBtn").addEventListener("click", (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setTheme(isDark() ? "light" : "dark", { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+  });
   $("#addBtn").addEventListener("click", () => openSheet());
   $("#addAccountBtn").addEventListener("click", () => openAccountSheet());
   $("#railAddAccount").addEventListener("click", () => openAccountSheet());
@@ -1753,11 +1861,29 @@ function bind() {
     timer = setTimeout(() => { state.q = v; renderBoard(); }, 110);
   });
 
+  // 四组筛选收进横向下拉：点按钮开合，点面板外或按 Esc 收起
+  $$(".fdrop").forEach((drop) => {
+    const btn = drop.querySelector(".fd-btn");
+    if (!btn) return;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleDrop(drop);
+    });
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".fdrop")) closeDrops();
+  });
+  $("#filterReset").addEventListener("click", (e) => {
+    e.stopPropagation();
+    resetFilters();
+  });
+
   $("#categoryChips").addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
     if (!chip) return;
     state.cat = chip.dataset.cat;
     state.accCat.clear(); // 换全局视角时，账号内的局部筛选一并作废，免得「清了还在筛」
+    closeDrops();
     renderChips();
     renderBoard();
   });
@@ -1774,6 +1900,7 @@ function bind() {
     if (!chip) return;
     state.platform = chip.dataset.platform;
     state.accCat.clear();
+    closeDrops();
     renderChips();
     renderBoard();
     $("#boardTitle").textContent = state.platform === "all" ? "按平台分组" : state.platform;
@@ -1783,11 +1910,13 @@ function bind() {
     if (!chip) return;
     // 「改名」是操作按钮，不是筛选项 —— 少了这个分支会把 state.provider 设成 undefined
     if (chip.dataset.provRename !== undefined) {
+      closeDrops();
       openRenameProvider(state.provider !== "all" ? state.provider : null);
       return;
     }
     state.provider = chip.dataset.prov;
     state.accCat.clear();
+    closeDrops();
     renderChips();
     renderBoard();
   });
@@ -1797,6 +1926,7 @@ function bind() {
     if (!chip) return;
     state.host = chip.dataset.host;
     state.accCat.clear();
+    closeDrops();
     renderChips();
     renderBoard();
   });
@@ -2132,6 +2262,7 @@ function bind() {
   document.addEventListener("keydown", (e) => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
     if (e.key === "Escape") {
+      if (document.querySelector(".fdrop.open")) return closeDrops();
       if (!$("#confirmLayer").hidden) return closeConfirm();
       if (!$("#platLayer").hidden) return closePlatSheet();
       if (!$("#provLayer").hidden) return closeProviderSheet();
@@ -2150,6 +2281,23 @@ function bind() {
     $("#topbar").classList.toggle("scrolled", window.scrollY > 8);
     rememberScroll();
   }, { passive: true });
+
+  // 卡片玻璃反光：鼠标移到 .stat / .asset 上时，把光标位置写成 --mx / --my，
+  // CSS 里的径向渐变跟着走。只改 CSS 变量、不做布局；rAF 节流，触屏不启用。
+  if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+    let spotRaf = 0;
+    document.addEventListener("pointermove", (e) => {
+      const el = e.target instanceof Element ? e.target.closest(".stat.spot, .asset") : null;
+      if (!el || spotRaf) return;
+      spotRaf = requestAnimationFrame(() => {
+        spotRaf = 0;
+        if (!el.isConnected) return;
+        const r = el.getBoundingClientRect();
+        el.style.setProperty("--mx", `${Math.round(e.clientX - r.left)}px`);
+        el.style.setProperty("--my", `${Math.round(e.clientY - r.top)}px`);
+      });
+    }, { passive: true });
+  }
 }
 
 function syncViewButtons() {
