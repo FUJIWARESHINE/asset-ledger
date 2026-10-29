@@ -1735,7 +1735,9 @@ html[data-theme="dark"] .acc {
 
 .acc-head {
   display: flex; align-items: center; gap: 11px;
-  padding: 10px 12px;
+  /* 下内边距由 10px 收到 6px：让出的 4px 交给 .acc-body-in 当裁剪余量，
+     账号行与磁贴之间的视觉间距仍是 10px */
+  padding: 10px 12px 6px;
   cursor: pointer;
   user-select: none;
   transition: background 0.2s;
@@ -1868,7 +1870,9 @@ html[data-theme="dark"] .acc {
   overflow: hidden;
   transition: height 0.3s var(--ease-out);
 }
-.acc-body-in { padding: 0 12px 12px; }
+/* 顶部 4px 是留给 .ac 悬停上浮（-2px）＋ 1px 外描边的裁剪余量：
+   .acc-body 要 overflow:hidden 才能做折叠，磁贴贴边时上浮会被削掉上沿 */
+.acc-body-in { padding: 4px 12px 12px; }
 .acc.folded .acc-body { height: 0; }
 .acc.folded .acc-body-in { visibility: hidden; transition: visibility 0s linear 0.3s; }
 
